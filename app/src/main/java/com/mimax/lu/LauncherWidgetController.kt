@@ -42,6 +42,14 @@ class LauncherWidgetController(context: Context) {
             host.createView(appContext, widgetId, info).apply { setAppWidget(widgetId, info) }
         }.getOrNull()
 
+    fun configureIntent(widgetId: Int): Intent? {
+        val component = manager.getAppWidgetInfo(widgetId)?.configure ?: return null
+        return Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
+            setComponent(component)
+            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+        }
+    }
+
     fun deleteWidget(widgetId: Int) {
         runCatching { host.deleteAppWidgetId(widgetId) }
     }
