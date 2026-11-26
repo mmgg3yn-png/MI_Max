@@ -85,7 +85,7 @@ public final class MeIslandThemeManager {
         return true;
     }
     public boolean remove(String id) {
-        if("ltin".equals(id)||"his".equals(id)||"coloros".equals(id))return false;
+        if(isBuiltIn(id))return false;
         prefs.edit().remove("pack_"+id).remove("previous_"+id).apply();
         if(id.equals(selectedId()))select("his");
         return true;
@@ -130,6 +130,16 @@ public final class MeIslandThemeManager {
         Theme t=parse(new JSONObject(manifest));
         if(!t.id.matches("[A-Za-z0-9_.-]{1,48}") || t.name.trim().isEmpty()) throw new IllegalArgumentException("Invalid theme identity");
         save(t); select(t.id); return t;
+    }
+    public Theme installJson(String json) throws Exception {
+        Theme t=parse(new JSONObject(json));
+        if(!t.id.matches("[A-Za-z0-9_.-]{1,48}") || t.name.trim().isEmpty()) throw new IllegalArgumentException("Invalid theme identity");
+        save(t);
+        select(t.id);
+        return t;
+    }
+    public boolean isBuiltIn(String id) {
+        return "ltin".equals(id) || "his".equals(id) || "coloros".equals(id) || "oneplus_sample".equals(id);
     }
     public void exportTheme(Uri uri) throws Exception {
         try(OutputStream out=context.getContentResolver().openOutputStream(uri)) {
@@ -587,3 +597,71 @@ if "com.benny.openlauncher.mimax.ExtensionRecoveryActivity" not in m:
         </activity>
     </application>''', 1)
 manifest.write_text(m)
+
+
+# Built-in offline .mt1 theme catalogue.
+
+(JAVA / "MeIslandStoreActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.view.Gravity;
+import android.widget.*;
+import java.util.*;
+
+public final class MeIslandStoreActivity extends Activity {
+ private MeIslandThemeManager manager;
+ private LinearLayout list;
+ private static final String[][] PACKS={
+  {"oneplus_split","OnePlus Split","OnePlus-inspired split activity card with spring geometry","custom","split","spring","4010806080","4293529600","34","20","224","40","124","360"},
+  {"hyper_wide","Hyper Wide","Wide HyperIsland-style activity card","his","wide_card","morph","3994021149","4290316799","28","24","244","44","140","320"},
+  {"coloros_glass","ColorOS Glass","Fluid translucent capsule with softer corners","coloros","fluid","morph","3425055540","4290638847","44","30","210","44","132","420"},
+  {"ltin_compact","LTIN Compact","Compact dark pill with a spring expansion","ltin","pill","spring","4278190080","4294967295","12","30","174","34","96","240"}
+ };
+ private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+ @Override protected void onCreate(Bundle b){super.onCreate(b);manager=new MeIslandThemeManager(this);
+  ScrollView scroll=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);list.setPadding(dp(18),dp(18),dp(18),dp(24));list.setBackgroundColor(0xff101722);scroll.addView(list);
+  TextView title=new TextView(this);title.setText("Me Island Theme Store");title.setTextColor(-1);title.setTextSize(24);list.addView(title);
+  TextView note=new TextView(this);note.setText("Install declarative theme packs independently of the launcher APK. Each pack changes actual card geometry, layout and motion.");note.setTextColor(0xffc5d1df);note.setPadding(0,dp(8),0,dp(14));list.addView(note);
+  Button importPack=new Button(this);importPack.setText("Import .mt1 from storage");importPack.setOnClickListener(v->startActivity(new android.content.Intent(this,MeIslandSettingsActivity.class)));list.addView(importPack);
+  for(String[] pack:PACKS)addPack(pack);
+  setContentView(scroll);
+ }
+ private void addPack(String[] p){
+  LinearLayout card=new LinearLayout(this);card.setOrientation(1);card.setPadding(dp(12),dp(12),dp(12),dp(12));card.setBackgroundColor(0xff202b39);
+  LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(10);list.addView(card,lp);
+  TextView title=new TextView(this);title.setText(p[1]);title.setTextColor(-1);title.setTextSize(17);card.addView(title);
+  TextView desc=new TextView(this);desc.setText(p[2]+"\nEngine: "+p[3]+" • Layout: "+p[4]+" • Animation: "+p[5]);desc.setTextColor(0xffc0ccda);card.addView(desc);
+  boolean installed=manager.findTheme(p[0])!=null;
+  Button install=new Button(this);install.setText(installed?"Reinstall / Update pack":"Install theme pack");card.addView(install);
+  install.setOnClickListener(v->{
+   try{
+    String json=new org.json.JSONObject().put("format","mimax-island-theme").put("id",p[0]).put("name",p[1]).put("style",p[3]).put("layout",p[4]).put("animation",p[5])
+     .put("background",Long.parseLong(p[6])).put("accent",Long.parseLong(p[7])).put("blur",Integer.parseInt(p[8])).put("cornerDp",Integer.parseInt(p[9]))
+     .put("widthDp",Integer.parseInt(p[10])).put("compactHeightDp",Integer.parseInt(p[11])).put("expandedHeightDp",Integer.parseInt(p[12])).put("animationMs",Integer.parseInt(p[13])).toString();
+    manager.installJson(json);
+    Toast.makeText(this,"Installed and applied "+p[1],Toast.LENGTH_SHORT).show();
+    install.setText("Reinstall / Update pack");
+   }catch(Exception e){Toast.makeText(this,"Could not install: "+e.getMessage(),Toast.LENGTH_LONG).show();}
+  });
+  Button remove=new Button(this);remove.setText("Remove installed pack");remove.setEnabled(installed);card.addView(remove);
+  remove.setOnClickListener(v->{if(manager.remove(p[0])){Toast.makeText(this,"Pack removed",Toast.LENGTH_SHORT).show();remove.setEnabled(false);}else Toast.makeText(this,"Cannot remove a built-in engine",Toast.LENGTH_SHORT).show();});
+ }
+}
+''')
+
+manifest=BASE / "AndroidManifest.xml"
+m=manifest.read_text()
+if "com.benny.openlauncher.mimax.MeIslandStoreActivity" not in m:
+    m=m.replace("</application>",'''        <activity android:name="com.benny.openlauncher.mimax.MeIslandStoreActivity" android:exported="false" android:label="Me Island Theme Store" />
+    </application>''',1)
+manifest.write_text(m)
+
+settings=JAVA / "MeIslandSettingsActivity.java"
+s=settings.read_text()
+if "MeIslandStoreActivity" not in s:
+    old='''  Button extensions=button("إدارة الإضافات");content.addView(extensions);extensions.setOnClickListener(v->startActivity(new Intent(this,ExtensionManagerActivity.class)));'''
+    new='''  Button store=button("فتح متجر ثيمات الجزيرة");content.addView(store);store.setOnClickListener(v->startActivity(new Intent(this,MeIslandStoreActivity.class)));
+  Button extensions=button("إدارة الإضافات");content.addView(extensions);extensions.setOnClickListener(v->startActivity(new Intent(this,ExtensionManagerActivity.class)));'''
+    if old not in s: raise SystemExit("Missing MeIsland settings extension button anchor")
+    settings.write_text(s.replace(old,new,1))

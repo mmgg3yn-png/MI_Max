@@ -392,15 +392,18 @@ public final class ExtensionRegistry {
     public Entry install(InputStream archive, int sdk) throws Exception {
         File stage=new File(root,".staging-"+UUID.randomUUID()); stage.mkdirs();
         try(ZipInputStream zin=new ZipInputStream(archive)) {
-            ZipEntry e; byte[] b=new byte[8192];
+            ZipEntry e; byte[] b=new byte[8192]; int entryCount=0; long totalBytes=0;
             while((e=zin.getNextEntry())!=null) {
+                if(++entryCount>128) throw new IOException("Too many extension archive entries");
                 String n=e.getName();
                 if(n.startsWith("/") || n.contains("..") || n.contains("\\\\")) throw new SecurityException("Unsafe archive path");
                 File out=new File(stage,n);
                 if(!out.getCanonicalPath().startsWith(stage.getCanonicalPath()+File.separator)) throw new SecurityException("Path traversal");
                 if(e.isDirectory()) out.mkdirs(); else {
                     out.getParentFile().mkdirs();
-                    try(FileOutputStream os=new FileOutputStream(out)){int k;while((k=zin.read(b))>0)os.write(b,0,k);}
+                    try(FileOutputStream os=new FileOutputStream(out)){
+                        int k; while((k=zin.read(b))>0){ totalBytes+=k; if(totalBytes>4L*1024L*1024L) throw new IOException("Extension package exceeds 4 MB"); os.write(b,0,k); }
+                    }
                 }
             }
         }
