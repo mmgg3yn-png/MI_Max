@@ -1,5 +1,16 @@
 from pathlib import Path
+import shutil
 
+def replace_once(path, old, new, label):
+    p = Path(path)
+    text = p.read_text()
+    if new in text:
+        return
+    if old not in text:
+        raise SystemExit("Missing patch marker: " + label)
+    p.write_text(text.replace(old, new, 1))
+
+# Identity, universal ABIs, and About attribution.
 gradle = Path("app/build.gradle")
 source = gradle.read_text()
 replacements = [
@@ -10,94 +21,338 @@ replacements = [
     ('versionName "0.6.1"', 'versionName "1.0.0-mimax.1"'),
 ]
 for old, new in replacements:
-    if old not in source:
-        raise SystemExit(f"Expected Gradle marker not found: {old}")
-    source = source.replace(old, new, 1)
-
+    if old in source:
+        source = source.replace(old, new, 1)
+    elif new not in source:
+        raise SystemExit("Expected Gradle marker not found: " + old)
 marker = "        multiDexEnabled false"
-if marker not in source:
-    raise SystemExit("Could not locate defaultConfig ABI insertion point")
+if 'abiFilters "armeabi-v7a", "arm64-v8a"' not in source:
+    if marker not in source:
+        raise SystemExit("Could not locate defaultConfig ABI insertion point")
+    source = source.replace(marker, marker + '\n\n        // Universal Mi_Max APK for ARMv7 and ARM64.\n        ndk { abiFilters "armeabi-v7a", "arm64-v8a" }', 1)
 source = source.replace(
-    marker,
-    marker + '\n\n        // Single APK; compatible with ARMv7 and ARM64 devices.\n'
-             + '        ndk { abiFilters "armeabi-v7a", "arm64-v8a" }',
-    1,
+    "        release {\n            minifyEnabled false",
+    "        release {\n            signingConfig signingConfigs.debug\n            minifyEnabled false",
+    1
 )
 gradle.write_text(source)
-
 settings = Path("settings.gradle")
-settings.write_text(settings.read_text().replace(
-    'rootProject.name = "OpenLauncher"',
-    'rootProject.name = "Mi_Max Launcher"',
-))
+settings.write_text(settings.read_text().replace('rootProject.name = "OpenLauncher"', 'rootProject.name = "Mi_Max Launcher"'))
 
 strings = Path("app/src/main/res/values/strings.xml")
-source = strings.read_text()
-if 'name="mimax_developer_title"' not in source:
-    source = source.replace(
-        "</resources>",
-        '    <string name="mimax_developer_title">Mi_Max Developer</string>\n'
-        '    <string name="mimax_developer_summary">محمد السعيد علي&#10;Porting, adaptation and maintenance for ARM32 and ARM64 devices outside Xiaomi.&#10;mmgg3yn@gmail.com | Telegram: @Mi_Max12</string>\n'
-        "</resources>",
-        1,
-    )
-strings.write_text(source)
+s = strings.read_text()
+if 'name="mimax_developer_title"' not in s:
+    s = s.replace("</resources>", """    <string name="mimax_developer_title">Mi_Max Developer</string>
+    <string name="mimax_developer_summary">محمد السعيد علي&#10;mmgg3yn@gmail.com&#10;Telegram: @Mi_Max12</string>
+    <string name="mimax_island_settings">Me Island</string>
+    <string name="mimax_island_summary">Live activity capsule overlay and timer</string>
+</resources>""", 1)
+strings.write_text(s)
 
 about = Path("app/src/main/res/xml/preferences_about.xml")
-source = about.read_text()
-marker = (
-    '    </PreferenceCategory>\n\n'
-    '    <PreferenceCategory\n'
-    '        android:key="@string/pref_key__more_info__project_community"'
-)
-if 'mimax_developer_title' not in source:
-    if marker not in source:
-        raise SystemExit("Could not find project team category insertion point")
-    source = source.replace(
-        marker,
-        '        <Preference\n'
-        '            android:icon="@drawable/ic_info_black_24dp"\n'
-        '            android:title="@string/mimax_developer_title"\n'
-        '            android:summary="@string/mimax_developer_summary" />\n\n'
-        + marker,
-        1,
-    )
-about.write_text(source)
+s = about.read_text()
+if 'mimax_developer_title' not in s:
+    marker = '    </PreferenceCategory>\n\n    <PreferenceCategory'
+    if marker not in s:
+        raise SystemExit("Could not find About category insertion point")
+    s = s.replace(marker, """        <Preference
+            android:icon="@drawable/ic_info_black_24dp"
+            android:title="@string/mimax_developer_title"
+            android:summary="@string/mimax_developer_summary" />
+\n    </PreferenceCategory>\n\n    <PreferenceCategory""", 1)
+about.write_text(s)
 
+# Add a real overlay permission-gated Me Island foreground service and settings entry.
+src = Path("app/src/main/java/com/benny/openlauncher/mimax")
+src.mkdir(parents=True, exist_ok=True)
+(src / "MeIslandService.java").write_text(r'''package com.benny.openlauncher.mimax;
 
-# The upstream About screen loads these documents through R.raw.*.
-# Copy them explicitly because the upstream copy task is not wired into this Gradle version.
-import shutil
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.graphics.Typeface;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.provider.Settings;
+import android.view.Gravity;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
+import android.widget.TextView;
+import android.graphics.drawable.GradientDrawable;
+import java.util.Locale;
+
+public final class MeIslandService extends Service {
+    public static final String ACTION_START_TIMER = "com.mimax.launcher.action.START_TIMER";
+    public static final String ACTION_STOP = "com.mimax.launcher.action.STOP";
+    public static final String EXTRA_DURATION = "duration_ms";
+    private static final String CHANNEL = "mimax_island";
+    private final Handler handler = new Handler();
+    private WindowManager windowManager;
+    private FrameLayout capsule;
+    private TextView label;
+    private long endsAt;
+    private boolean expanded;
+
+    private final Runnable ticker = new Runnable() {
+        @Override public void run() {
+            if (label == null) return;
+            long remaining = Math.max(0L, endsAt - System.currentTimeMillis());
+            long seconds = (remaining + 999L) / 1000L;
+            label.setText(String.format(Locale.getDefault(), expanded ? "Timer  %02d:%02d  ·  Mi_Max" : "◷  %02d:%02d",
+                    seconds / 60L, seconds % 60L));
+            if (remaining == 0L) {
+                label.setText("Timer finished");
+                handler.postDelayed(() -> stopSelf(), 2500L);
+            } else {
+                handler.postDelayed(this, 500L);
+            }
+        }
+    };
+
+    @Override public void onCreate() {
+        super.onCreate();
+        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        createChannel();
+        startForeground(4107, buildNotification("Me Island is ready"));
+    }
+
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            removeCapsule();
+            stopForeground(true);
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        if (intent != null && ACTION_START_TIMER.equals(intent.getAction())) {
+            long duration = Math.max(1000L, Math.min(24L * 60L * 60L * 1000L,
+                    intent.getLongExtra(EXTRA_DURATION, 60000L)));
+            endsAt = System.currentTimeMillis() + duration;
+            showCapsule();
+            handler.removeCallbacks(ticker);
+            handler.post(ticker);
+            updateNotification("Timer running");
+        }
+        return START_STICKY;
+    }
+
+    private void showCapsule() {
+        if (!Settings.canDrawOverlays(this)) return;
+        if (capsule == null) {
+            capsule = new FrameLayout(this);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(Color.rgb(12, 13, 17));
+            bg.setCornerRadius(dp(28));
+            bg.setStroke(dp(1), Color.rgb(65, 68, 78));
+            capsule.setBackground(bg);
+            label = new TextView(this);
+            label.setTextColor(Color.WHITE);
+            label.setTextSize(13);
+            label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            label.setGravity(Gravity.CENTER);
+            capsule.addView(label, new FrameLayout.LayoutParams(-1, -1));
+            capsule.setPadding(dp(16), 0, dp(16), 0);
+            capsule.setOnClickListener(v -> {
+                expanded = !expanded;
+                if (label != null) ticker.run();
+                resizeCapsule();
+            });
+        }
+        if (capsule.getParent() == null) {
+            WindowManager.LayoutParams p = new WindowManager.LayoutParams(
+                    dp(expanded ? 250 : 150), dp(42),
+                    Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                            : WindowManager.LayoutParams.TYPE_PHONE,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                    PixelFormat.TRANSLUCENT);
+            p.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            p.y = dp(8);
+            try { windowManager.addView(capsule, p); } catch (RuntimeException ignored) { }
+        }
+    }
+
+    private void resizeCapsule() {
+        if (capsule == null || capsule.getParent() == null) return;
+        WindowManager.LayoutParams p = (WindowManager.LayoutParams) capsule.getLayoutParams();
+        p.width = dp(expanded ? 250 : 150);
+        p.height = dp(expanded ? 48 : 42);
+        try { windowManager.updateViewLayout(capsule, p); } catch (RuntimeException ignored) { }
+    }
+
+    private void removeCapsule() {
+        handler.removeCallbacks(ticker);
+        if (capsule != null && capsule.getParent() != null) {
+            try { windowManager.removeView(capsule); } catch (RuntimeException ignored) { }
+        }
+        capsule = null;
+        label = null;
+    }
+
+    private void createChannel() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationChannel channel = new NotificationChannel(CHANNEL, "Me Island", NotificationManager.IMPORTANCE_LOW);
+            channel.setDescription("Keeps live activity overlay available while enabled");
+            ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(channel);
+        }
+    }
+
+    private Notification buildNotification(String text) {
+        Intent open = new Intent(this, MeIslandSettingsActivity.class);
+        PendingIntent pi = PendingIntent.getActivity(this, 0, open,
+                PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 23 ? PendingIntent.FLAG_IMMUTABLE : 0));
+        Notification.Builder b = Build.VERSION.SDK_INT >= 26
+                ? new Notification.Builder(this, CHANNEL) : new Notification.Builder(this);
+        return b.setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("Mi_Max Me Island").setContentText(text)
+                .setContentIntent(pi).setOngoing(true).build();
+    }
+
+    private void updateNotification(String text) {
+        ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).notify(4107, buildNotification(text));
+    }
+
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+
+    @Override public void onDestroy() {
+        removeCapsule();
+        super.onDestroy();
+    }
+
+    @Override public IBinder onBind(Intent intent) { return null; }
+}
+''')
+
+(src / "MeIslandSettingsActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.provider.Settings;
+import android.view.Gravity;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+public final class MeIslandSettingsActivity extends Activity {
+    private static final int REQUEST_OVERLAY = 7321;
+
+    @Override protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(22), dp(24), dp(22), dp(22));
+        TextView title = new TextView(this);
+        title.setText("Mi_Max Me Island");
+        title.setTextSize(23);
+        title.setGravity(Gravity.CENTER_VERTICAL);
+        root.addView(title);
+        TextView info = new TextView(this);
+        info.setText("A floating live-activity capsule. Android requires you to grant display-over-other-apps permission before it can appear above other apps.");
+        info.setTextSize(15);
+        info.setPadding(0, dp(14), 0, dp(20));
+        root.addView(info);
+        Button permission = new Button(this);
+        permission.setText("Grant overlay permission");
+        permission.setOnClickListener(v -> requestOverlay());
+        root.addView(permission);
+        Button timer = new Button(this);
+        timer.setText("Start 1-minute timer in Me Island");
+        timer.setOnClickListener(v -> {
+            if (!Settings.canDrawOverlays(this)) { requestOverlay(); return; }
+            Intent service = new Intent(this, MeIslandService.class);
+            service.setAction(MeIslandService.ACTION_START_TIMER);
+            service.putExtra(MeIslandService.EXTRA_DURATION, 60000L);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(service); else startService(service);
+            finish();
+        });
+        root.addView(timer);
+        Button stop = new Button(this);
+        stop.setText("Stop Me Island");
+        stop.setOnClickListener(v -> {
+            Intent service = new Intent(this, MeIslandService.class);
+            service.setAction(MeIslandService.ACTION_STOP);
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(service); else startService(service);
+        });
+        root.addView(stop);
+        setContentView(root);
+    }
+
+    private void requestOverlay() {
+        if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
+            Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName()));
+            startActivityForResult(i, REQUEST_OVERLAY);
+        }
+    }
+
+    private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
+}
+''')
+
+manifest = Path("app/src/main/AndroidManifest.xml")
+m = manifest.read_text()
+if "com.benny.openlauncher.mimax.MeIslandService" not in m:
+    m = m.replace('<application', '''<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application''', 1)
+    m = m.replace('</application>', '''        <activity
+            android:name="com.benny.openlauncher.mimax.MeIslandSettingsActivity"
+            android:exported="false"
+            android:label="Mi_Max Me Island" />
+        <service
+            android:name="com.benny.openlauncher.mimax.MeIslandService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled live activity overlay" />
+        </service>
+    </application>''', 1)
+manifest.write_text(m)
+
+master = Path("app/src/main/res/xml/preferences_master.xml")
+m = master.read_text()
+if "mimax_island_settings" not in m:
+    marker = '        <PreferenceScreen\n            android:icon="@drawable/ic_info_outline_dark_24dp"'
+    entry = '''        <Preference
+            android:icon="@drawable/ic_info_outline_dark_24dp"
+            android:title="@string/mimax_island_settings"
+            android:summary="@string/mimax_island_summary">
+            <intent android:targetPackage="com.mimax.launcher"
+                android:targetClass="com.benny.openlauncher.mimax.MeIslandSettingsActivity" />
+        </Preference>
+
+'''
+    if marker not in m:
+        raise SystemExit("Could not find About preference insertion point")
+    master.write_text(m.replace(marker, entry + marker, 1))
+
+# Upstream About screen reads these files as raw resources.
 raw_dir = Path("app/src/main/res/raw")
 raw_dir.mkdir(parents=True, exist_ok=True)
-for source_name, target_name in [
-    ("LICENSE", "license.md"),
-    ("CONTRIBUTORS.md", "contributors.md"),
-    ("CHANGELOG.md", "changelog.md"),
-]:
-    source_file = Path(source_name)
-    if not source_file.exists():
-        raise SystemExit(f"Required upstream attribution/document file missing: {source_name}")
-    shutil.copyfile(source_file, raw_dir / target_name)
+for name in ["LICENSE", "CONTRIBUTORS.md", "CHANGELOG.md"]:
+    if not Path(name).exists():
+        raise SystemExit("Required upstream attribution file missing: " + name)
+    shutil.copyfile(name, raw_dir / name.lower().replace(".md", ".md"))
 
-
-# Android 12+ requires an explicit PendingIntent mutability flag.
+# Android 12+ PendingIntent mutability.
 context_utils = Path("app/src/main/java/net/gsantner/opoc/util/ContextUtils.java")
-source = context_utils.read_text()
+s = context_utils.read_text()
 old = "PendingIntent.FLAG_CANCEL_CURRENT);"
 new = "PendingIntent.FLAG_CANCEL_CURRENT | PendingIntent.FLAG_IMMUTABLE);"
-if old not in source:
-    raise SystemExit("Could not locate restart PendingIntent to make it Android 12+ safe")
-context_utils.write_text(source.replace(old, new, 1))
+if old in s:
+    context_utils.write_text(s.replace(old, new, 1))
 
-
-# Sign the first test build with Android's local debug certificate so it can be installed.
-app_gradle = Path("app/build.gradle")
-source = app_gradle.read_text()
-release_marker = "        release {\n            minifyEnabled false"
-release_replacement = "        release {\n            signingConfig signingConfigs.debug\n            minifyEnabled false"
-if release_marker not in source:
-    raise SystemExit("Could not find release build type for test signing")
-app_gradle.write_text(source.replace(release_marker, release_replacement, 1))
-
-print("Mi_Max branding, developer credit, About resources, Android 12+ fix and installable test signing applied.")
+print("Mi_Max identity + ARM32/ARM64 + developer page + functional permission-gated Me Island timer overlay applied.")
