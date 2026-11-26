@@ -7,7 +7,9 @@ This file preserves the complete requested scope. A feature is marked implemente
 - [x] Debug build targets ARM32 (`armeabi-v7a`) and ARM64 (`arm64-v8a`).
 - [x] Launcher HOME intent and app launch intent.
 - [x] Installed-app listing, app drawer screen, and name search.
-- [x] Home screen with a basic pinned-app grid.
+- [x] Home screen with a basic app grid, multi-page horizontal navigation, and folder creation from long-press selection.
+- [x] Independent hide-label controls for Home and App Library.
+- [x] Persistent hide/unhide installed apps from Home and App Library.
 - [x] Persistent settings for theme selection, grid columns, glass opacity, and blur preference value.
 - [x] Built-in visual theme presets.
 - [x] Developer/About screen and local account placeholder.
@@ -26,7 +28,10 @@ This file preserves the complete requested scope. A feature is marked implemente
 - [ ] Hide apps, app categories, app shortcuts, notification dots where Android grants access, and advanced search.
 - [ ] Backup/restore of launcher layout, settings, theme, folders, and widget configuration.
 - [ ] Real Mi_Max AI integration with request handling, streaming, error handling, and model selection; fields alone do not count.
-- [ ] Optional dynamic-island-style launcher overlay, only where Android permissions and device behavior permit.
+- [x] Me Island foreground overlay foundation with timer, tap expansion, swipe expansion/collapse, cutout-aware top positioning, animated appearance/disappearance, and device-supported blur.
+- [x] Three selectable Me Island visual presets: LTIN, HIS, and ColorOS; visual geometry and animation parameters differ by preset.
+- [x] Declarative `.mt1` theme import from a ZIP containing `manifest.json` or a compatible JSON manifest; code execution is not allowed in theme packs.
+- [ ] Me Island media sessions, calls, downloads, notification listener integration, simultaneous activity carousel, and OnePlus extension.
 - [ ] Recent-apps-like launcher page (not replacement of privileged Android Recents).
 - [ ] Localization, RTL polish, tablet/foldable layouts, performance and memory testing.
 - [ ] Release signing, versioning, tests, and verified APK artifact.
