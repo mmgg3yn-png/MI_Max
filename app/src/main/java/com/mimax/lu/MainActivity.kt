@@ -752,6 +752,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
         OutlinedButton(onClick={ importTheme.launch(arrayOf("application/json")) },modifier=Modifier.fillMaxWidth()) { Text("Import theme pack") }
         if (backupMessage.isNotBlank()) Text(backupMessage,color=Color.White.copy(.75f),fontSize=11.sp)
+        OutlinedButton(onClick={ context.startActivity(Intent(context, MeIslandSettingsActivity::class.java)) },modifier=Modifier.fillMaxWidth()) { Text("Me Island • Live activity settings") }
         Button(onClick=onAccount,modifier=Modifier.fillMaxWidth()) { Icon(Icons.Default.Person,null);Spacer(Modifier.width(7.dp));Text("Developer • Account • About") }
     }
 }
