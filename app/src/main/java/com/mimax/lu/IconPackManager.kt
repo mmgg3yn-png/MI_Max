@@ -11,6 +11,7 @@ class IconPackManager(private val context: Context) {
     data class Pack(val packageName: String, val label: String)
 
     private val pm = context.packageManager
+    private val iconCache = HashMap<Pair<String, String>, Drawable?>()
 
     @Suppress("DEPRECATION")
     fun installed(): List<Pack> {
@@ -28,9 +29,11 @@ class IconPackManager(private val context: Context) {
         }.distinctBy { it.packageName }.sortedBy { it.label.lowercase() }
     }
 
-    fun iconFor(iconPackPackage: String, targetPackage: String): Drawable? {
+    @Synchronized fun iconFor(iconPackPackage: String, targetPackage: String): Drawable? {
         if (iconPackPackage.isBlank()) return null
-        return runCatching {
+        val key = iconPackPackage to targetPackage
+        if (iconCache.containsKey(key)) return iconCache[key]
+        val resolved = runCatching {
             val resources = pm.getResourcesForApplication(iconPackPackage)
             val xmlId = resources.getIdentifier("appfilter", "xml", iconPackPackage)
             if (xmlId == 0) return null
@@ -56,5 +59,7 @@ class IconPackManager(private val context: Context) {
             val id = resources.getIdentifier(name, "drawable", iconPackPackage)
             if (id == 0) null else resources.getDrawable(id, context.theme)
         }.getOrNull()
+        iconCache[key] = resolved
+        return resolved
     }
 }
