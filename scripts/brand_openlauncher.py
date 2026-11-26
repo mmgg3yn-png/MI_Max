@@ -90,4 +90,14 @@ if old not in source:
     raise SystemExit("Could not locate restart PendingIntent to make it Android 12+ safe")
 context_utils.write_text(source.replace(old, new, 1))
 
-print("Mi_Max branding, developer credit, About resources and Android 12+ PendingIntent fix applied.")
+
+# Sign the first test build with Android's local debug certificate so it can be installed.
+app_gradle = Path("app/build.gradle")
+source = app_gradle.read_text()
+release_marker = "        release {\n            minifyEnabled false"
+release_replacement = "        release {\n            signingConfig signingConfigs.debug\n            minifyEnabled false"
+if release_marker not in source:
+    raise SystemExit("Could not find release build type for test signing")
+app_gradle.write_text(source.replace(release_marker, release_replacement, 1))
+
+print("Mi_Max branding, developer credit, About resources, Android 12+ fix and installable test signing applied.")
