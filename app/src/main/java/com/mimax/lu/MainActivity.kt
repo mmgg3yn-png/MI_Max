@@ -629,6 +629,9 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                             extensions=manager.discover()
                         })
                     }
+                    if(extension.missingDependencies.isNotEmpty()) {
+                        Text("Missing dependencies: ${extension.missingDependencies.joinToString()}",color=Color(0xFFFFB4AB),fontSize=10.sp)
+                    }
                     if(extension.requestedPermissions.isNotEmpty()) {
                         Text("Requested permissions: ${extension.requestedPermissions.size} • denied: ${extension.deniedPermissions.size}",color=Color.White.copy(.62f),fontSize=10.sp)
                         extension.requestedPermissions.forEach { permission ->
