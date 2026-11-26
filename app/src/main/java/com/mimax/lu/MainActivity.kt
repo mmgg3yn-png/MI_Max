@@ -79,6 +79,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     var endpoint by remember { mutableStateOf(prefs.getString("ai_endpoint","") ?: "") }
     var model by remember { mutableStateOf(prefs.getString("ai_model","") ?: "") }
     var apiKey by remember { mutableStateOf(prefs.getString("ai_key","") ?: "") }
+    var iconPack by remember { mutableStateOf(prefs.getString("icon_pack","") ?: "") }
     var showAccount by remember { mutableStateOf(false) }
     val customTheme = remember(theme) { ThemePackManager(ctx).installed().firstOrNull { it.id == theme } }
     val colors = customTheme?.let { listOf(Color(it.backgroundStart), Color(it.backgroundEnd), Color(it.backgroundEnd)) } ?: when(theme) {
@@ -87,13 +88,14 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         "Aurora" -> listOf(Color(0xFF59477A),Color(0xFF253B58),Color(0xFF101522))
         else -> listOf(Color(0xFF33465F),Color(0xFF151E2C),Color(0xFF080C13))
     }
-    val apps= remember {
+    val apps= remember(iconPack) {
         val pm=ctx.packageManager
+        val iconPacks = IconPackManager(ctx)
         val i=Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         @Suppress("DEPRECATION")
         pm.queryIntentActivities(i,PackageManager.MATCH_ALL).mapNotNull { r ->
             val ai=r.activityInfo?.applicationInfo ?: return@mapNotNull null
-            AppEntry(r.loadLabel(pm).toString(),ai.packageName,r.loadIcon(pm))
+            AppEntry(r.loadLabel(pm).toString(),ai.packageName,iconPacks.iconFor(iconPack, ai.packageName) ?: r.loadIcon(pm))
         }.distinctBy{it.pkg}.sortedBy{it.name.lowercase()}
     }
     val filtered=apps.filter{it.name.contains(query,true)}
@@ -119,7 +121,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                         "widgets" -> WidgetsPage(widgetController)
                         "extensions" -> ExtensionsPage()
                         "themes" -> ThemesPage(theme,{theme=it;save("theme",it)})
-                        "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},{tab="account"})
+                        "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},iconPack,{iconPack=it;save("icon_pack",it)},{tab="account"})
                         "account" -> AccountPage { showAccount=false;tab="settings" }
                         else -> HomePage(apps,columns,opacity,{tab="apps"},{tab="settings"})
                     }
@@ -546,7 +548,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
     }
 }
-@Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,onAccount:()->Unit) {
+@Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,iconPack:String,onIconPack:(String)->Unit,onAccount:()->Unit) {
     val context = LocalContext.current
     var backupMessage by remember { mutableStateOf("") }
     val backupManager = remember { LauncherBackupManager(context) }
@@ -567,6 +569,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         Text("Blur amount: ${blur.toInt()}",color=Color.White.copy(.7f));Slider(value=blur,onValueChange=onBlur,valueRange=0f..28f)
         Text("Glass opacity: ${(alpha*100).toInt()}%",color=Color.White.copy(.7f));Slider(value=alpha,onValueChange=onAlpha,valueRange=.05f..0.75f)
         Text("Home grid columns: $cols",color=Color.White.copy(.7f));Slider(value=cols.toFloat(),onValueChange={onCols(it.toInt().coerceIn(3,6))},valueRange=3f..6f,steps=2)
+        IconPackSettingRow(iconPack,onIconPack,context)
         HorizontalDivider(color=Color.White.copy(.18f),modifier=Modifier.padding(vertical=9.dp))
         Text("Home gestures",color=Color.White,fontWeight=FontWeight.SemiBold)
         GestureSettingRow("Double tap",GestureSettings.Gesture.DOUBLE_TAP_HOME,context)
@@ -590,6 +593,27 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         if (backupMessage.isNotBlank()) Text(backupMessage,color=Color.White.copy(.75f),fontSize=11.sp)
         Button(onClick=onAccount,modifier=Modifier.fillMaxWidth()) { Icon(Icons.Default.Person,null);Spacer(Modifier.width(7.dp));Text("Developer • Account • About") }
     }
+}
+@Composable private fun IconPackSettingRow(selected:String,onSelected:(String)->Unit,context:android.content.Context) {
+    val packs = remember { IconPackManager(context).installed() }
+    var expanded by remember { mutableStateOf(false) }
+    val selectedName = packs.firstOrNull { it.packageName == selected }?.label ?: if(selected.isBlank()) "System default" else selected
+    Row(Modifier.fillMaxWidth().padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Icon pack",color=Color.White,fontSize=13.sp)
+            Text(selectedName,color=Color.White.copy(.55f),fontSize=10.sp)
+        }
+        Box {
+            TextButton(onClick={expanded=true}) { Text("Change") }
+            DropdownMenu(expanded=expanded,onDismissRequest={expanded=false}) {
+                DropdownMenuItem(text={Text("System default")},onClick={onSelected("");expanded=false})
+                packs.forEach { pack ->
+                    DropdownMenuItem(text={Text(pack.label)},onClick={onSelected(pack.packageName);expanded=false})
+                }
+            }
+        }
+    }
+    if(packs.isEmpty()) Text("No compatible ADW/Nova-style icon packs are installed.",color=Color.White.copy(.5f),fontSize=10.sp)
 }
 @Composable private fun GestureSettingRow(label:String,gesture:GestureSettings.Gesture,context:android.content.Context) {
     val settings = remember { GestureSettings(context) }
