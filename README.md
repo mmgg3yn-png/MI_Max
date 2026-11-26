@@ -1,52 +1,25 @@
 # Mi_Max Launcher
 
-Native Android launcher project built with Kotlin, Jetpack Compose and a small Rust JNI module.
+Mi_Max Launcher is being rebuilt on the real **OpenLauncher** Android codebase, not as a separate launcher imitation.
 
-- Application: Mi_Max Launcher
-- Package: `com.mimax.lu`
-- Minimum Android: 13 (API 33)
-- Architectures: ARMv7 (32-bit) and ARM64
-- UI: Kotlin + Jetpack Compose
-- Native module: Rust (JNI)
-- Build: GitHub Actions
+## Upstream foundation
 
-## Existing implemented modules
+- Upstream: https://github.com/linsmod/openlauncher-2026
+- Pinned upstream commit: `683e11199c67024132287757a55665f56fc6fff6`
+- License: Apache-2.0 (upstream notices and attribution must remain)
+- Existing native launcher features retained: paged desktop, dock, drag-and-drop, app hiding, search, icon packs, Android widgets, launcher settings and backup support.
+- Mi_Max identity: developer محمد السعيد علي — mmgg3yn@gmail.com — Telegram @Mi_Max12.
 
-- Home screen and app drawer with installed-app discovery and app launching.
-- Home pages, folders, gesture bindings and configurable grid.
-- Wallpaper, font, icon shape and compatible icon-pack selection.
-- Android AppWidget host/controller and widget picker.
-- Theme pack import/export foundation and local theme presets.
-- Launcher backup and restore.
-- External APK extension discovery, permissions visibility, dependency checks, failure logs and a separate recovery screen.
-- Mi_Max AI connection settings and optional AI chat UI.
-- Developer/about screen.
+## Build policy
 
-## Me Island
+The build workflow now checks out the pinned upstream source and applies Mi_Max integration patches to that source. It is manual-only while feature integration is in progress, so an incomplete upstream-only APK is not presented as the finished Mi_Max product.
 
-A first working Me Island timer-overlay foundation has been added:
-- Separate foreground service, independent of the launcher Activity.
-- Android overlay permission flow.
-- Live countdown capsule above other apps.
-- Compact/expanded tap interaction.
-- Animated appearance/disappearance and blur-behind where supported.
-- Timer activity can continue while another app is in the foreground.
+A release candidate may be built only after the acceptance checklist in `FEATURES.md` is implemented, compiled, and verified. The universal package must include both `armeabi-v7a` and `arm64-v8a`.
 
-This is an initial timer implementation, not the completed feature set. Media sessions, calls, downloads, notification listener integration, multiple simultaneous activities, the LTIN/HIS/ColorOS visual engines, OnePlus extension, and the full `.mt1` theme package format still require implementation and device testing.
+## Product scope
 
-## Remaining full-product work
+The complete requested specification is tracked in `FEATURES.md`. A feature is not complete merely because a settings switch or visual mockup exists: it must have a working Android implementation, persistence, permission handling, error recovery where relevant, and build/device validation.
 
-The complete product specification includes advanced folder/icon layouts, per-app label hiding, real widget stacks and custom widgets, theme studio, dynamic island visual engines and extension API, secure extension signing/sandboxing, extension marketplace/update delivery, profile/focus/child modes, Spotlight search, performance diagnostics, and robust backup/recovery. These must be implemented and tested as functional modules; the current repository must not be described as having them until they exist.
+## Android platform limits
 
-## Android limitations
-
-Me Island needs the user's explicit **Display over other apps** permission to remain visible above other applications. Android may restrict foreground services or overlays according to device policy and battery management. Some system-only features (privileged Recents/SystemUI control and silent lock-screen control) cannot be provided by a normal third-party launcher.
-
-## Build
-
-GitHub Actions workflow: `.github/workflows/android.yml`.
-Download the APK from the workflow's `Mi_Max_Launcher-debug` artifact after a successful run.
-
-## License and upstream components
-
-Do not copy proprietary Xiaomi, Apple, OPPO or OnePlus code, assets, signing keys or private system resources. Implement compatible original behavior and retain all applicable upstream license notices.
+A normal third-party launcher cannot replace privileged SystemUI, Android Recents, the lock screen, or force changes inside other apps. Overlay-based Me Island functions require explicit user permission and are subject to Android background-service restrictions. Features that depend on APIs or permissions will be clearly disclosed and must fail safely when unavailable.
