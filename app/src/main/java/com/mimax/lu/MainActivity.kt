@@ -524,6 +524,10 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     val manager = remember { ExtensionPackageManager(context) }
     var extensions by remember { mutableStateOf(manager.discover()) }
     var message by remember { mutableStateOf("") }
+    val templateExporter = remember { ExtensionTemplateExporter(context) }
+    val exportTemplate = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) message = templateExporter.export(uri).fold({ "Extension starter project exported." }, { "Export failed: ${it.message}" })
+    }
     val installPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
@@ -541,6 +545,9 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             Button(onClick={installPicker.launch(arrayOf(ExtensionPackageManager.MIME_APK,"application/octet-stream"))},modifier=Modifier.weight(1f)) { Text("Install extension") }
             OutlinedButton(onClick={extensions=manager.discover()},modifier=Modifier.weight(1f)) { Text("Refresh") }
+        }
+        OutlinedButton(onClick={exportTemplate.launch("MiMaxExtension-Starter.zip")},modifier=Modifier.fillMaxWidth()) {
+            Text("Export extension developer starter project")
         }
         OutlinedButton(onClick={
             manager.disableAll()
