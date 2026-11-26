@@ -10,6 +10,7 @@ Declare one exported Activity with:
 - Category: `android.intent.category.DEFAULT`
 - Activity metadata `com.mimax.lu.extension` set to `true`
 - Optional activity metadata `com.mimax.lu.minLauncherVersion` (integer; current host contract version is 1)
+- Optional activity metadata `com.mimax.lu.requiredPackages` (comma-separated Android package names that must be installed)
 
 Example:
 
@@ -41,4 +42,4 @@ Example:
 
 ## Current limits
 
-This contract launches independent extension APK activities. It does not grant extensions permission to modify launcher internals, replace SystemUI, or execute arbitrary code inside the launcher process. The current recovery action disables registered extensions; automatic package rollback and a remote extension marketplace are not implemented.
+This contract launches independent extension APK activities. It does not grant extensions permission to modify launcher internals, replace SystemUI, or execute arbitrary code inside the launcher process. The host checks the minimum launcher contract version and optional required package names. The current recovery action disables registered extensions; automatic package rollback and a remote extension marketplace are not implemented.
