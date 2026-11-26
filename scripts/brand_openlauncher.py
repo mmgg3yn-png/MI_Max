@@ -80,4 +80,14 @@ for source_name, target_name in [
         raise SystemExit(f"Required upstream attribution/document file missing: {source_name}")
     shutil.copyfile(source_file, raw_dir / target_name)
 
-print("Mi_Max branding, developer credit and About resources applied.")
+
+# Android 12+ requires an explicit PendingIntent mutability flag.
+context_utils = Path("app/src/main/java/net/gsantner/opoc/util/ContextUtils.java")
+source = context_utils.read_text()
+old = "PendingIntent.FLAG_CANCEL_CURRENT);"
+new = "PendingIntent.FLAG_CANCEL_CURRENT | PendingIntent.FLAG_IMMUTABLE);"
+if old not in source:
+    raise SystemExit("Could not locate restart PendingIntent to make it Android 12+ safe")
+context_utils.write_text(source.replace(old, new, 1))
+
+print("Mi_Max branding, developer credit, About resources and Android 12+ PendingIntent fix applied.")
