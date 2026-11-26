@@ -17,6 +17,8 @@ class MeIslandThemeManager(private val context: Context) {
         val id: String,
         val name: String,
         val style: String,
+        val layout: String,
+        val animation: String,
         val background: Long,
         val accent: Long,
         val blur: Int,
@@ -33,9 +35,9 @@ class MeIslandThemeManager(private val context: Context) {
         const val BLUR = "blur_enabled"
 
         val builtIns = listOf(
-            Theme("ltin", "LTIN", "ltin", 0xFF050505, 0xFFFFFFFF, 18, 28, 178, 34, 104, 260),
-            Theme("his", "HIS", "his", 0xEE10151D, 0xFFB8D9FF, 28, 24, 196, 38, 116, 340),
-            Theme("coloros", "ColorOS", "coloros", 0xCC263442, 0xFFBDEBFF, 32, 22, 190, 38, 112, 300)
+            Theme("ltin", "LTIN", "ltin", "pill", "spring", 0xFF050505, 0xFFFFFFFF, 18, 28, 178, 34, 104, 260),
+            Theme("his", "HIS", "his", "wide_card", "morph", 0xEE10151D, 0xFFB8D9FF, 28, 24, 196, 38, 116, 340),
+            Theme("coloros", "ColorOS", "coloros", "fluid", "spring", 0xCC263442, 0xFFBDEBFF, 32, 22, 190, 38, 112, 300)
         )
     }
 
@@ -121,6 +123,8 @@ class MeIslandThemeManager(private val context: Context) {
             id = theme.getString("id"),
             name = theme.getString("name").take(48),
             style = theme.optString("style", "custom"),
+            layout = theme.optString("layout", "wide_card").also { require(it in setOf("pill", "wide_card", "split", "fluid")) },
+            animation = theme.optString("animation", "spring").also { require(it in setOf("spring", "morph", "fade_slide")) },
             background = theme.optLong("background", 0xEE10151D),
             accent = theme.optLong("accent", 0xFFB8D9FF),
             blur = theme.optInt("blur", 24).coerceIn(0, 80),
