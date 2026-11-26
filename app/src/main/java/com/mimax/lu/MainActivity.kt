@@ -319,7 +319,8 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         LazyVerticalGrid(columns=GridCells.Fixed(4),modifier=Modifier.weight(1f),contentPadding=PaddingValues(bottom=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) { items(apps,key={it.pkg}){AppIcon(it)} }
     }
 }
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)\n@Composable private fun AppIcon(app:AppEntry,onLongClick:()->Unit = {}) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable private fun AppIcon(app:AppEntry,onLongClick:()->Unit = {}) {
     val ctx=LocalContext.current
     Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.combinedClickable(
         onClick={ ctx.packageManager.getLaunchIntentForPackage(app.pkg)?.let{ctx.startActivity(it)} },
@@ -530,7 +531,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                         Text(pack.name,color=Color.White)
                         Text("Imported pack • ${pack.iconShape} icons",color=Color.White.copy(.55f),fontSize=10.sp)
                     }
-                    if(current==pack.id) Icon(Icons.Default.Check,color=Color(0xFFB9D9FF),contentDescription="Applied")
+                    if(current==pack.id) Icon(Icons.Default.Check,tint=Color(0xFFB9D9FF),contentDescription="Applied")
                 }
             }
         }
