@@ -26,8 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.DrawablePainter
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -155,7 +155,18 @@ private fun MiMaxLauncher() {
     }
 }
 @Composable private fun ImageIcon(icon:android.graphics.drawable.Drawable,label:String) {
-    androidx.compose.foundation.Image(painter=DrawablePainter(icon),contentDescription=label,modifier=Modifier.padding(9.dp).fillMaxSize())
+    AndroidView(
+        modifier = Modifier.padding(9.dp).fillMaxSize(),
+        factory = { context -> android.widget.ImageView(context).apply {
+            setImageDrawable(icon.constantState?.newDrawable(context.resources)?.mutate() ?: icon)
+            contentDescription = label
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        } },
+        update = { view ->
+            view.setImageDrawable(icon.constantState?.newDrawable(view.resources)?.mutate() ?: icon)
+            view.contentDescription = label
+        }
+    )
 }
 @Composable private fun GlassTile(title:String,sub:String,symbol:String,modifier:Modifier=Modifier) {
     Column(modifier.clip(RoundedCornerShape(22.dp)).background(glass).padding(14.dp)) {
