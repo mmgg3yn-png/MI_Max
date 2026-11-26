@@ -111,6 +111,14 @@ class MeIslandSettingsActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Import theme (.mt1)") }
 
+                    OutlinedButton(
+                        onClick = {
+                            runCatching { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+                            status = "Enable Mi_Max Launcher under Notification Access to show notification cards in Me Island."
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Enable notification access") }
+
                     Text("Glass / Blur", style = MaterialTheme.typography.titleMedium)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Background blur", modifier = Modifier.weight(1f))
