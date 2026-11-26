@@ -208,15 +208,16 @@ class MeIslandService : Service() {
         val minutes = seconds / 60
         val remainder = seconds % 60
         val time = String.format(Locale.getDefault(), "%02d:%02d", minutes, remainder)
-        view.text = when (theme.style) {
-            "ltin" -> if (expanded) "◷   $time     Timer" else "◷  $time"
-            "coloros" -> if (expanded) "TIMER  •  $time\nTap to collapse" else "◷   $time"
+        view.text = when (theme.layout) {
+            "pill" -> if (expanded) "◷   $time     TIMER" else "◷  $time"
+            "split" -> if (expanded) "◷  $time     •     LIVE\nOnePlus-style activity card" else "◷  $time   •"
+            "fluid" -> if (expanded) "TIMER  •  $time\nSwipe up to collapse" else "◷   $time"
             else -> if (expanded) "⏱  TIMER     $time\nSwipe up to collapse" else "⏱  $time"
         }
         view.textSize = if (expanded) 13f else 12f
         view.background = makeBackground(theme)
         layoutParams?.let { params ->
-            params.width = dp(if (expanded) theme.widthDp.coerceAtLeast(210) else if (theme.style == "ltin") 154 else theme.widthDp)
+            params.width = dp(if (expanded) theme.widthDp.coerceAtLeast(210) else if (theme.layout == "pill") 154 else theme.widthDp)
             params.height = dp(if (expanded) theme.expandedHeightDp else theme.compactHeightDp)
             runCatching { windowManager?.updateViewLayout(view, params) }
         }
