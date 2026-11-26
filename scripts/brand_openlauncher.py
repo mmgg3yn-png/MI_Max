@@ -1,0 +1,67 @@
+from pathlib import Path
+
+gradle = Path("app/build.gradle")
+source = gradle.read_text()
+replacements = [
+    ('applicationId "com.benny.openlauncher"', 'applicationId "com.mimax.launcher"'),
+    ('resValue \'string\', \'app_name\', "OpenLauncher"', 'resValue \'string\', \'app_name\', "Mi_Max Launcher"'),
+    ('resValue "string", "manifest_package_id", "com.benny.openlauncher"', 'resValue "string", "manifest_package_id", "com.mimax.launcher"'),
+    ('versionCode 37', 'versionCode 38'),
+    ('versionName "0.6.1"', 'versionName "1.0.0-mimax.1"'),
+]
+for old, new in replacements:
+    if old not in source:
+        raise SystemExit(f"Expected Gradle marker not found: {old}")
+    source = source.replace(old, new, 1)
+
+marker = "        multiDexEnabled false"
+if marker not in source:
+    raise SystemExit("Could not locate defaultConfig ABI insertion point")
+source = source.replace(
+    marker,
+    marker + '\n\n        // Single APK; compatible with ARMv7 and ARM64 devices.\n'
+             + '        ndk { abiFilters "armeabi-v7a", "arm64-v8a" }',
+    1,
+)
+gradle.write_text(source)
+
+settings = Path("settings.gradle")
+settings.write_text(settings.read_text().replace(
+    'rootProject.name = "OpenLauncher"',
+    'rootProject.name = "Mi_Max Launcher"',
+))
+
+strings = Path("app/src/main/res/values/strings.xml")
+source = strings.read_text()
+if 'name="mimax_developer_title"' not in source:
+    source = source.replace(
+        "</resources>",
+        '    <string name="mimax_developer_title">Mi_Max Developer</string>\n'
+        '    <string name="mimax_developer_summary">محمد السعيد علي&#10;Porting, adaptation and maintenance for ARM32 and ARM64 devices outside Xiaomi.&#10;mmgg3yn@gmail.com | Telegram: @Mi_Max12</string>\n'
+        "</resources>",
+        1,
+    )
+strings.write_text(source)
+
+about = Path("app/src/main/res/xml/preferences_about.xml")
+source = about.read_text()
+marker = (
+    '    </PreferenceCategory>\n\n'
+    '    <PreferenceCategory\n'
+    '        android:key="@string/pref_key__more_info__project_community"'
+)
+if 'mimax_developer_title' not in source:
+    if marker not in source:
+        raise SystemExit("Could not find project team category insertion point")
+    source = source.replace(
+        marker,
+        '        <Preference\n'
+        '            android:icon="@drawable/ic_info_black_24dp"\n'
+        '            android:title="@string/mimax_developer_title"\n'
+        '            android:summary="@string/mimax_developer_summary" />\n\n'
+        + marker,
+        1,
+    )
+about.write_text(source)
+
+print("Mi_Max branding and developer credit applied.")
