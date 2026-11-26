@@ -8,6 +8,7 @@ import org.json.JSONObject
 class LauncherBackupManager(private val context: Context) {
     private val prefs get() = context.getSharedPreferences("mimax_launcher", Context.MODE_PRIVATE)
     private val layoutPrefs get() = context.getSharedPreferences("launcher_layout_v1", Context.MODE_PRIVATE)
+    private val extraPreferenceFiles = listOf("gesture_settings_v1", "extension_registry_v1", "theme_packs_v1", "widget_host_v1")
 
     fun exportTo(uri: Uri): Result<Unit> = runCatching {
         val root = JSONObject()
@@ -15,6 +16,11 @@ class LauncherBackupManager(private val context: Context) {
             .put("version", 1)
             .put("settings", prefs.all.toJson())
             .put("layout", layoutPrefs.all.toJson())
+            .put("extraPreferences", JSONObject().apply {
+                extraPreferenceFiles.forEach { name ->
+                    put(name, context.getSharedPreferences(name, Context.MODE_PRIVATE).all.toJson())
+                }
+            })
         context.contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use {
             it.write(root.toString(2))
         } ?: error("Unable to open backup destination")
@@ -28,6 +34,13 @@ class LauncherBackupManager(private val context: Context) {
         require(root.optInt("version") == 1) { "Unsupported backup version" }
         restorePrefs(prefs, root.getJSONObject("settings"))
         restorePrefs(layoutPrefs, root.getJSONObject("layout"))
+        root.optJSONObject("extraPreferences")?.let { extra ->
+            extraPreferenceFiles.forEach { name ->
+                extra.optJSONObject(name)?.let { values ->
+                    restorePrefs(context.getSharedPreferences(name, Context.MODE_PRIVATE), values)
+                }
+            }
+        }
     }
 
     private fun Map<String, *>.toJson(): JSONObject {
