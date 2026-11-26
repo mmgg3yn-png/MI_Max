@@ -34,11 +34,15 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -60,8 +64,26 @@ jobs:
           APK="$(find launcher-src/app/build/outputs/apk/flavorDefault/release -maxdepth 1 -name '*.apk' -print -quit)"
           test -n "$APK"
           unzip -l "$APK" > apk-files.txt
-          grep -q 'lib/armeabi-v7a/' apk-files.txt
-          grep -q 'lib/arm64-v8a/' apk-files.txt
+          # This upstream launcher is Java/Kotlin-only. With no bundled native .so,
+          # Android executes the same DEX APK on ARMv7 and ARM64 without ABI splits.
+          if grep -q 'lib/.*\.so
+          cp "$APK" dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
+          sha256sum dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
+          ls -lh dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mi_Max_Launcher-OpenLauncher-ARM32-ARM64
+          path: dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
+          if-no-files-found: error
+          retention-days: 30
+ apk-files.txt; then
+            grep -q 'lib/armeabi-v7a/' apk-files.txt
+            grep -q 'lib/arm64-v8a/' apk-files.txt
+          else
+            echo "No native libraries: universal DEX APK is CPU-architecture independent."
+          fi
           mkdir -p dist
           cp "$APK" dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
           sha256sum dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
