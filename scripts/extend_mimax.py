@@ -288,7 +288,8 @@ public final class MeIslandService extends Service {
     private void render(){
         if(items.isEmpty()){removeView();return;}
         Item item=current(); if(item==null)return;
-        MeIslandThemeManager.Theme theme=new MeIslandThemeManager(this).current();
+        MeIslandThemeManager performance=new MeIslandThemeManager(this);
+        MeIslandThemeManager.Theme theme=performance.current();
         if(root==null || !shownId.equals(item.id+"|"+theme.style+"|"+theme.layout)){removeView();buildView(theme,item);}
         if(title!=null) title.setText(formatTitle(item,theme));
         if(detail!=null) detail.setText(expanded||"wide_card".equals(theme.layout)||"split".equals(theme.layout)?item.body:"");
@@ -345,7 +346,6 @@ public final class MeIslandService extends Service {
         if(Build.VERSION.SDK_INT>=31&&performance.blurEnabled()&&!performance.lowPerformanceEnabled()){params.flags|=WindowManager.LayoutParams.FLAG_BLUR_BEHIND;params.setBlurBehindRadius(dp(theme.blur));}
         try{
             wm.addView(root,params);
-            MeIslandThemeManager performance=new MeIslandThemeManager(this);
             long motion=performance.reducedMotionEnabled()?0L:(performance.lowPerformanceEnabled()?Math.min(120,theme.animationMs):theme.animationMs);
             if(motion==0L){root.setAlpha(1f);root.setScaleX(1f);root.setScaleY(1f);}
             else {root.setAlpha(0f);root.setScaleX(.86f);root.setScaleY(.86f);root.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(motion).setInterpolator(interpolator(theme.animation)).start();}

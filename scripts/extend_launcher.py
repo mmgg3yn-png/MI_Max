@@ -17,7 +17,7 @@ def replace_once(path, old, new, label):
 item_view = Path("app/src/main/java/com/benny/openlauncher/widget/AppItemView.java")
 s = item_view.read_text()
 if "private String _iconShape" not in s:
-    s = s.replace("import android.graphics.Paint;", "import android.graphics.Paint;\nimport android.graphics.Path;\nimport android.graphics.PorterDuff;", 1)
+    s = s.replace("import android.graphics.Paint;", "import android.graphics.Paint;\nimport android.graphics.Path;\nimport android.graphics.PorterDuff;\nimport android.graphics.Typeface;", 1)
     s = s.replace("    private boolean _vibrateWhenLongPress;", "    private boolean _vibrateWhenLongPress;\n    private String _iconShape = \"native\";\n    private int _iconTint = Color.TRANSPARENT;", 1)
     anchor = """    public boolean getShowLabel() {
         return _showLabel;
@@ -47,6 +47,11 @@ if "private String _iconShape" not in s:
 
     public void setLabelTextColor(int color) {
         _textPaint.setColor(color);
+        invalidate();
+    }
+
+    public void setLabelTypeface(Typeface typeface) {
+        if(typeface!=null) _textPaint.setTypeface(typeface);
         invalidate();
     }
 """
@@ -121,6 +126,8 @@ public final class MiMaxPersonalization {
         }
         view.setIconShape(p.getString("icon_shape","native"));
         view.setLabelTextSizeSp(p.getFloat("label_size",12f));
+        String fontPath=p.getString("font_path",null);
+        if(fontPath!=null)try{java.io.File file=new java.io.File(fontPath);if(file.isFile())view.setLabelTypeface(android.graphics.Typeface.createFromFile(file));}catch(Exception ignored){}
         if(pkg!=null) view.setLabelTextColor(p.getInt("label_color:"+pkg,p.getInt("label_color",0xffffffff)));
         else if(p.contains("label_color")) view.setLabelTextColor(p.getInt("label_color",0xffffffff));
         view.setIconTint(pkg==null?p.getInt("icon_tint",0):p.getInt("icon_tint:"+pkg,p.getInt("icon_tint",0)));
@@ -169,7 +176,7 @@ import android.widget.*;
 import java.util.*;
 
 public final class MiMaxPersonalizationActivity extends Activity {
-    private static final int PICK_ICON=8411;
+    private static final int PICK_ICON=8411, PICK_FONT=8412;
     private String pendingIconPackage;
     private android.content.SharedPreferences prefs;
     private LinearLayout list;
@@ -185,6 +192,10 @@ public final class MiMaxPersonalizationActivity extends Activity {
         TextView sizeLabel=new TextView(this);sizeLabel.setText("Icon label size");sizeLabel.setTextColor(-1);root.addView(sizeLabel);
         SeekBar size=new SeekBar(this);size.setMax(10);size.setProgress(Math.max(0,Math.min(10,Math.round(prefs.getFloat("label_size",12f)-8f))));root.addView(size);
         size.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar b,int v,boolean u){sizeLabel.setText("Icon label size: "+(v+8)+" sp");prefs.edit().putFloat("label_size",v+8f).apply();}public void onStartTrackingTouch(SeekBar b){}public void onStopTrackingTouch(SeekBar b){}});
+        Button font=new Button(this);font.setText(prefs.contains("font_path")?"Change custom label font":"Import custom label font");root.addView(font);
+        font.setOnClickListener(v->{Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("font/*").addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(pick,PICK_FONT);});
+        Button clearFont=new Button(this);clearFont.setText("Reset label font");clearFont.setEnabled(prefs.contains("font_path"));root.addView(clearFont);
+        clearFont.setOnClickListener(v->{String path=prefs.getString("font_path",null);if(path!=null)new java.io.File(path).delete();prefs.edit().remove("font_path").apply();clearFont.setEnabled(false);font.setText("Import custom label font");});
         search=new EditText(this);search.setSingleLine(true);search.setHint("Search installed apps");search.setTextColor(-1);search.setHintTextColor(0xff9aa9ba);search.setInputType(InputType.TYPE_CLASS_TEXT);root.addView(search);
         list=new LinearLayout(this);list.setOrientation(1);root.addView(list);
         search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int count,int after){}public void onTextChanged(CharSequence s,int st,int before,int count){populate(s.toString());}public void afterTextChanged(android.text.Editable e){}});
@@ -236,6 +247,15 @@ public final class MiMaxPersonalizationActivity extends Activity {
             prefs.edit().putString("icon_uri:"+pendingIconPackage,uri.toString()).apply();
             Toast.makeText(this,"Custom icon saved. Reopen the launcher screen to refresh it.",Toast.LENGTH_LONG).show();
             pendingIconPackage=null;
+        } else if(request==PICK_FONT&&result==RESULT_OK&&data!=null&&data.getData()!=null){
+            java.io.File target=new java.io.File(getFilesDir(),"mimax-custom-label-font.ttf");
+            try(java.io.InputStream in=getContentResolver().openInputStream(data.getData());java.io.FileOutputStream out=new java.io.FileOutputStream(target)){
+                if(in==null)throw new java.io.IOException("Cannot read font file");
+                byte[] buffer=new byte[8192];int n,total=0;while((n=in.read(buffer))!=-1){total+=n;if(total>5*1024*1024)throw new java.io.IOException("Font file exceeds 5 MB");out.write(buffer,0,n);}
+                android.graphics.Typeface.createFromFile(target);
+                prefs.edit().putString("font_path",target.getAbsolutePath()).apply();
+                Toast.makeText(this,"Custom label font saved. Reopen the launcher screen to apply it.",Toast.LENGTH_LONG).show();
+            }catch(Exception e){target.delete();Toast.makeText(this,"Font import failed: "+e.getMessage(),Toast.LENGTH_LONG).show();}
         }
     }
 }
@@ -1800,3 +1820,54 @@ s=s.replace('"mimax_ai.xml"\n    };','"mimax_ai.xml",\n        "mimax_spotlight.
 backup.write_text(s)
 
 print("Added home-screen Spotlight button with app search, recent app history, launcher settings tools and permission-gated contacts search.")
+
+
+
+
+# Register Mi_Max tools as real launcher gesture actions, reusing OpenLauncher's own gesture picker.
+actions = Path("app/src/main/java/com/benny/openlauncher/util/LauncherAction.java")
+s=actions.read_text()
+old_enum="EditMinibar, SetWallpaper, LockScreen, LauncherSettings, VolumeDialog, DeviceSettings, AppDrawer, SearchBar, MobileNetworkSettings, ShowNotifications, TurnOffScreen"
+new_enum=old_enum+", MiMaxSpotlight, MiMaxAppLibrary, MiMaxFocusMode, MiMaxMeIsland, MiMaxWidgetStack, MiMaxAi"
+if new_enum not in s:
+    if old_enum not in s: raise SystemExit("LauncherAction enum marker missing")
+    s=s.replace(old_enum,new_enum,1)
+needle="""            new ActionDisplayItem(Action.ShowNotifications, HomeActivity._launcher.getResources().getString(R.string.minibar_title__show_notifications), HomeActivity._launcher.getResources().getString(R.string.minibar_summary__show_notifications), R.drawable.ic_notifications, 46),
+    };"""
+insert="""            new ActionDisplayItem(Action.ShowNotifications, HomeActivity._launcher.getResources().getString(R.string.minibar_title__show_notifications), HomeActivity._launcher.getResources().getString(R.string.minibar_summary__show_notifications), R.drawable.ic_notifications, 46),
+            new ActionDisplayItem(Action.MiMaxSpotlight, "Mi_Max Spotlight", "Open Spotlight search", R.drawable.ic_search_light_24dp, 9101),
+            new ActionDisplayItem(Action.MiMaxAppLibrary, "Mi_Max App Library", "Open the categorized app library", R.drawable.ic_apps_dark_24dp, 9102),
+            new ActionDisplayItem(Action.MiMaxFocusMode, "Mi_Max Focus Mode", "Open focus app selection", R.drawable.ic_settings_launcher_black_24dp, 9103),
+            new ActionDisplayItem(Action.MiMaxMeIsland, "Mi_Max Me Island", "Open live activity settings", R.drawable.ic_info_outline_dark_24dp, 9104),
+            new ActionDisplayItem(Action.MiMaxWidgetStack, "Mi_Max Smart Widget Stack", "Manage Android widgets", R.drawable.ic_apps_dark_24dp, 9105),
+            new ActionDisplayItem(Action.MiMaxAi, "Mi_Max AI", "Open the AI assistant", R.drawable.ic_info_outline_dark_24dp, 9106),
+    };"""
+if "Action.MiMaxSpotlight" not in s:
+    if needle not in s: raise SystemExit("LauncherAction display item marker missing")
+    s=s.replace(needle,insert,1)
+switch="""            case SearchBar:
+                HomeActivity._launcher.getSearchBar().getSearchButton().performClick();
+                break;"""
+switchNew=switch+"""
+            case MiMaxSpotlight:
+                context.startActivity(new Intent(context, com.benny.openlauncher.mimax.MiMaxSpotlightActivity.class));
+                break;
+            case MiMaxAppLibrary:
+                context.startActivity(new Intent(context, com.benny.openlauncher.mimax.MiMaxAppLibraryActivity.class));
+                break;
+            case MiMaxFocusMode:
+                context.startActivity(new Intent(context, com.benny.openlauncher.mimax.MiMaxFocusModeActivity.class));
+                break;
+            case MiMaxMeIsland:
+                context.startActivity(new Intent(context, com.benny.openlauncher.mimax.MeIslandSettingsActivity.class));
+                break;
+            case MiMaxWidgetStack:
+                context.startActivity(new Intent(context, com.benny.openlauncher.mimax.MiMaxSmartStackActivity.class));
+                break;
+            case MiMaxAi:
+                context.startActivity(new Intent(context, com.benny.openlauncher.mimax.MiMaxAiActivity.class));
+                break;"""
+if "case MiMaxSpotlight:" not in s:
+    if switch not in s: raise SystemExit("LauncherAction SearchBar switch marker missing")
+    s=s.replace(switch,switchNew,1)
+actions.write_text(s)
