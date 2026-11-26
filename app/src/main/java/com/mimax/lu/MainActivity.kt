@@ -108,6 +108,8 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     var blur by remember { mutableFloatStateOf(prefs.getFloat("blur",12f)) }
     var opacity by remember { mutableFloatStateOf(prefs.getFloat("opacity",.22f)) }
     var columns by remember { mutableIntStateOf(prefs.getInt("columns",4)) }
+    var hideHomeLabels by remember { mutableStateOf(prefs.getBoolean("hide_home_labels",false)) }
+    var hideDrawerLabels by remember { mutableStateOf(prefs.getBoolean("hide_drawer_labels",false)) }
     var theme by remember { mutableStateOf(prefs.getString("theme","Midnight Glass") ?: "Midnight Glass") }
     var endpoint by remember { mutableStateOf(prefs.getString("ai_endpoint","") ?: "") }
     var model by remember { mutableStateOf(prefs.getString("ai_model","") ?: "") }
@@ -159,7 +161,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     }
     val filtered=apps.filter{it.name.contains(query,true)}
     fun save(k:String,v:Any) { prefs.edit().apply {
-        when(v){ is Float->putFloat(k,v); is Int->putInt(k,v); is String->putString(k,v) }
+        when(v){ is Float->putFloat(k,v); is Int->putInt(k,v); is String->putString(k,v); is Boolean->putBoolean(k,v) }
     }.apply() }
     MaterialTheme(colorScheme=darkColorScheme(primary=customTheme?.let { Color(it.accent) } ?: Color(0xFFB9D9FF),surface=Color(0xFF202B3A),background=Color(0xFF0B111B)), typography=launcherTypography(customFont ?: FontFamily.Default)) {
         Box(Modifier.fillMaxSize()) {
@@ -179,14 +181,14 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 Spacer(Modifier.height(15.dp))
                 AnimatedContent(targetState=tab,transitionSpec={ androidx.compose.animation.fadeIn(tween(animationDuration)) togetherWith androidx.compose.animation.fadeOut(tween((animationDuration/2).coerceAtLeast(60))) },label="pages") { page ->
                     when(page) {
-                        "apps" -> AppsPage(filtered,query,iconShape,columns,{query=it})
+                        "apps" -> AppsPage(filtered,query,iconShape,columns,hideDrawerLabels,{query=it})
                         "ai" -> AiChatPage(endpoint,model,apiKey)
                         "widgets" -> WidgetsPage(widgetController)
                         "extensions" -> ExtensionsPage()
                         "themes" -> ThemesPage(theme,{theme=it;save("theme",it)})
-                        "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},iconPack,{iconPack=it;save("icon_pack",it)},wallpaperUri,{wallpaperPicker.launch(arrayOf("image/*"))},{wallpaperUri="";prefs.edit().remove("wallpaper_uri").apply()},fontPath,{fontPicker.launch(arrayOf("font/ttf","font/otf","application/octet-stream"))},{fontPath="";prefs.edit().remove("font_path").apply()},iconShape,{iconShape=it;save("icon_shape",it)},animationDuration,{animationDuration=it;save("animation_duration",it)},{tab="account"})
+                        "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},iconPack,{iconPack=it;save("icon_pack",it)},wallpaperUri,{wallpaperPicker.launch(arrayOf("image/*"))},{wallpaperUri="";prefs.edit().remove("wallpaper_uri").apply()},fontPath,{fontPicker.launch(arrayOf("font/ttf","font/otf","application/octet-stream"))},{fontPath="";prefs.edit().remove("font_path").apply()},iconShape,{iconShape=it;save("icon_shape",it)},animationDuration,{animationDuration=it;save("animation_duration",it)},hideHomeLabels,{hideHomeLabels=it;save("hide_home_labels",it)},hideDrawerLabels,{hideDrawerLabels=it;save("hide_drawer_labels",it)},{tab="account"})
                         "account" -> AccountPage { showAccount=false;tab="settings" }
-                        else -> HomePage(apps,columns,opacity,widgetController,iconShape,{tab="apps"},{tab="settings"})
+                        else -> HomePage(apps,columns,opacity,widgetController,iconShape,hideHomeLabels,{tab="apps"},{tab="settings"})
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -257,7 +259,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
     }
 }
-@Composable private fun HomePage(apps:List<AppEntry>,cols:Int,alpha:Float,widgetController:LauncherWidgetController,iconShape:String,onAll:()->Unit,onSettings:()->Unit) {
+@Composable private fun HomePage(apps:List<AppEntry>,cols:Int,alpha:Float,widgetController:LauncherWidgetController,iconShape:String,hideLabels:Boolean,onAll:()->Unit,onSettings:()->Unit) {
     val ctx=LocalContext.current
     val store = remember { LauncherLayoutStore(ctx) }
     val gestures = remember { GestureSettings(ctx) }
@@ -383,7 +385,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
             Spacer(Modifier.height(10.dp))
         }
         LazyVerticalGrid(columns=GridCells.Fixed(cols),modifier=Modifier.heightIn(max=330.dp),contentPadding=PaddingValues(bottom=8.dp),horizontalArrangement=Arrangement.spacedBy(9.dp),verticalArrangement=Arrangement.spacedBy(13.dp)) {
-            items(visibleApps.drop(homePage * appsPerPage).take(appsPerPage),key={it.pkg}) { AppIcon(it, iconShape=iconShape, onLongClick={ longPressApp(it) }) }
+            items(visibleApps.drop(homePage * appsPerPage).take(appsPerPage),key={it.pkg}) { AppIcon(it, iconShape=iconShape, showLabel=!hideLabels, onLongClick={ longPressApp(it) }) }
         }
     }
     if (showFolderName && openedFolder != null) {
@@ -426,17 +428,17 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         )
     }
 }
-@Composable private fun AppsPage(apps:List<AppEntry>,query:String,iconShape:String,cols:Int,onQuery:(String)->Unit) {
+@Composable private fun AppsPage(apps:List<AppEntry>,query:String,iconShape:String,cols:Int,hideLabels:Boolean,onQuery:(String)->Unit) {
     Column {
         Text("App Library",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
         GlassInput(query,onQuery,"Search installed apps")
         Spacer(Modifier.height(10.dp))
-        LazyVerticalGrid(columns=GridCells.Fixed(cols),modifier=Modifier.weight(1f),contentPadding=PaddingValues(bottom=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) { items(apps,key={it.pkg}){AppIcon(it,iconShape=iconShape)} }
+        LazyVerticalGrid(columns=GridCells.Fixed(cols),modifier=Modifier.weight(1f),contentPadding=PaddingValues(bottom=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) { items(apps,key={it.pkg}){AppIcon(it,iconShape=iconShape,showLabel=!hideLabels)} }
     }
 }
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable private fun AppIcon(app:AppEntry,iconShape:String="squircle",onLongClick:()->Unit = {}) {
+@Composable private fun AppIcon(app:AppEntry,iconShape:String="squircle",showLabel:Boolean=true,onLongClick:()->Unit = {}) {
     val ctx=LocalContext.current
     val iconClip = when(iconShape) { "circle" -> CircleShape; "square" -> RoundedCornerShape(4.dp); "rounded" -> RoundedCornerShape(12.dp); else -> RoundedCornerShape(19.dp) }
     Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.combinedClickable(
@@ -447,7 +449,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
             ImageIcon(app.icon,app.name)
         }
         Spacer(Modifier.height(4.dp))
-        Text(app.name,color=Color.White,fontSize=10.sp,maxLines=1)
+        if(showLabel) Text(app.name,color=Color.White,fontSize=10.sp,maxLines=1)
     }
 }
 @Composable private fun ImageIcon(icon:android.graphics.drawable.Drawable,label:String) {
@@ -693,7 +695,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
     }
 }
-@Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,iconPack:String,onIconPack:(String)->Unit,wallpaperUri:String,onChooseWallpaper:()->Unit,onClearWallpaper:()->Unit,fontPath:String,onChooseFont:()->Unit,onClearFont:()->Unit,iconShape:String,onIconShape:(String)->Unit,animationDuration:Int,onAnimationDuration:(Int)->Unit,onAccount:()->Unit) {
+@Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,iconPack:String,onIconPack:(String)->Unit,wallpaperUri:String,onChooseWallpaper:()->Unit,onClearWallpaper:()->Unit,fontPath:String,onChooseFont:()->Unit,onClearFont:()->Unit,iconShape:String,onIconShape:(String)->Unit,animationDuration:Int,onAnimationDuration:(Int)->Unit,hideHomeLabels:Boolean,onHideHomeLabels:(Boolean)->Unit,hideDrawerLabels:Boolean,onHideDrawerLabels:(Boolean)->Unit,onAccount:()->Unit) {
     val context = LocalContext.current
     var backupMessage by remember { mutableStateOf("") }
     val backupManager = remember { LauncherBackupManager(context) }
@@ -714,6 +716,8 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         Text("Wallpaper blur: ${blur.toInt()}",color=Color.White.copy(.7f));Slider(value=blur,onValueChange=onBlur,valueRange=0f..28f)
         Text("Glass opacity: ${(alpha*100).toInt()}%",color=Color.White.copy(.7f));Slider(value=alpha,onValueChange=onAlpha,valueRange=.05f..0.75f)
         Text("Home grid columns: $cols",color=Color.White.copy(.7f));Slider(value=cols.toFloat(),onValueChange={onCols(it.toInt().coerceIn(3,6))},valueRange=3f..6f,steps=2)
+        Row(verticalAlignment=Alignment.CenterVertically) { Text("Hide app names on Home",color=Color.White,modifier=Modifier.weight(1f)); Switch(checked=hideHomeLabels,onCheckedChange=onHideHomeLabels) }
+        Row(verticalAlignment=Alignment.CenterVertically) { Text("Hide app names in App Library",color=Color.White,modifier=Modifier.weight(1f)); Switch(checked=hideDrawerLabels,onCheckedChange=onHideDrawerLabels) }
         IconPackSettingRow(iconPack,onIconPack,context)
         IconShapeSettingRow(iconShape,onIconShape)
         Text("Page animation duration: ${animationDuration} ms",color=Color.White.copy(.7f),fontSize=12.sp)
