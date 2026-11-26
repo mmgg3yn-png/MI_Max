@@ -431,14 +431,32 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     fun persistIds() {
         prefs.edit().putStringSet("active_widget_ids", activeIds.map { it.toString() }.toSet()).apply()
     }
-    val bindLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK && pendingId >= 0) {
-            if (!activeIds.contains(pendingId)) activeIds.add(pendingId)
-            persistIds()
+    fun addWidgetToStack(id: Int) {
+        if (!activeIds.contains(id)) activeIds.add(id)
+        persistIds()
+    }
+    val configureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (pendingId >= 0 && result.resultCode == android.app.Activity.RESULT_OK) {
+            addWidgetToStack(pendingId)
         } else if (pendingId >= 0) {
             controller.deleteWidget(pendingId)
         }
         pendingId = -1
+    }
+    fun configureOrAdd(id: Int) {
+        val configureIntent = controller.configureIntent(id)
+        if (configureIntent != null) configureLauncher.launch(configureIntent) else {
+            addWidgetToStack(id)
+            pendingId = -1
+        }
+    }
+    val bindLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK && pendingId >= 0) {
+            configureOrAdd(pendingId)
+        } else if (pendingId >= 0) {
+            controller.deleteWidget(pendingId)
+            pendingId = -1
+        }
     }
     Column(Modifier.fillMaxSize()) {
         Text("Stacked Android Widgets", color=Color.White, fontSize=24.sp, fontWeight=FontWeight.Bold)
@@ -489,9 +507,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                         pendingId = id
                         val intent = controller.bindIntent(id, info.provider)
                         if (intent == null) {
-                            activeIds.add(id)
-                            persistIds()
-                            pendingId = -1
+                            configureOrAdd(id)
                         } else bindLauncher.launch(intent)
                     }) { Text("Add") }
                 }
