@@ -190,9 +190,14 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val messages = remember { mutableStateListOf<Pair<String, String>>() }
+    val context = LocalContext.current
     Column(Modifier.fillMaxSize()) {
         Text("Mi_Max AI", color=Color.White, fontSize=25.sp, fontWeight=FontWeight.Bold)
         Text(if (model.isBlank()) "Set endpoint, model and API key in Settings" else "Model: $model", color=Color.White.copy(.65f), fontSize=11.sp)
+        OutlinedButton(onClick={
+            val launch = context.packageManager.getLaunchIntentForPackage("com.mimax.ai")
+            if (launch != null) context.startActivity(launch) else error = "Mi_Max AI app is not installed on this device."
+        },modifier=Modifier.fillMaxWidth()) { Text("Open installed Mi_Max AI app") }
         Spacer(Modifier.height(8.dp))
         androidx.compose.foundation.lazy.LazyColumn(
             modifier=Modifier.weight(1f).fillMaxWidth(),
