@@ -311,7 +311,7 @@ public final class MeIslandService extends Service {
         GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(t.style.equals("ltin")?40:t.cornerDp));
         d.setStroke(dp(1),t.style.equals("his")?Color.argb(80,190,220,255):Color.argb(50,255,255,255));return d;
     }
-    private Interpolator interpolator(String a){if("spring".equals(a))return new OvershootInterpolator(.55f);if("fade_slide".equals(a))return new DecelerateInterpolator();return new AccelerateDecelerateInterpolator();}
+    private android.view.animation.Interpolator interpolator(String a){if("spring".equals(a))return new OvershootInterpolator(.55f);if("fade_slide".equals(a))return new DecelerateInterpolator();return new AccelerateDecelerateInterpolator();}
     private String format(long ms){long s=(ms+999)/1000;return String.format(Locale.getDefault(),"%02d:%02d",s/60,s%60);}
     private int cameraSafeTop(){
         if(Build.VERSION.SDK_INT>=30){try{android.view.DisplayCutout c=wm.getCurrentWindowMetrics().getWindowInsets().getDisplayCutout();if(c!=null&&!c.getBoundingRects().isEmpty())return c.getBoundingRects().get(0).bottom;}catch(Exception ignored){}}
