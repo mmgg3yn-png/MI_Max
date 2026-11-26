@@ -433,3 +433,117 @@ public final class ExtensionRegistry {
     }
 }
 ''')
+
+
+// Extension manager UI: import local .zip declarative packs, inspect installed manifests,
+// and roll back to the last-known-good version. Store/network updates are intentionally not
+// represented as complete until a trusted catalogue endpoint and signing keys exist.
+(src / "ExtensionManagerActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.os.Bundle;
+import android.view.ViewGroup;
+import android.widget.*;
+import com.benny.openlauncher.mimax.extensions.ExtensionRegistry;
+import org.json.JSONObject;
+import java.io.File;
+import java.io.FileInputStream;
+
+public final class ExtensionManagerActivity extends Activity {
+    private static final int PICK_PACKAGE = 8102;
+    private ExtensionRegistry registry;
+    private LinearLayout list;
+    @Override protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        registry = new ExtensionRegistry(this);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(20,20,20,20);
+        TextView title = new TextView(this);
+        title.setText("Mi_Max Extensions");
+        title.setTextSize(23);
+        root.addView(title);
+        TextView hint = new TextView(this);
+        hint.setText("Install declarative .zip extensions. Packages cannot execute code; review requested permissions before enabling them.");
+        hint.setPadding(0,12,0,12);
+        root.addView(hint);
+        Button add = new Button(this);
+        add.setText("Import extension ZIP");
+        add.setOnClickListener(v -> {
+            Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.setType("application/zip");
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            startActivityForResult(i,PICK_PACKAGE);
+        });
+        root.addView(add);
+        list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        root.addView(list,new LinearLayout.LayoutParams(-1,0,1));
+        setContentView(root);
+        refresh();
+    }
+    private void refresh() {
+        list.removeAllViews();
+        for(File dir:registry.list()) {
+            TextView row=new TextView(this);
+            String title=dir.getName();
+            File mf=new File(dir,"manifest.json");
+            try(FileInputStream in=new FileInputStream(mf)) {
+                byte[] b=new byte[(int)Math.min(mf.length(),65536)];
+                int n=in.read(b);
+                if(n>0) { JSONObject j=new JSONObject(new String(b,0,n,"UTF-8")); title=j.optString("name",title)+"  "+j.optString("version",""); }
+            } catch(Exception ignored) {}
+            row.setText(title);
+            row.setTextSize(16);
+            row.setPadding(8,18,8,8);
+            list.addView(row);
+            Button rollback=new Button(this);
+            rollback.setText("Rollback to last known good");
+            rollback.setOnClickListener(v -> {
+                Toast.makeText(this,registry.rollback(dir.getName())?"Rolled back":"No backup available",Toast.LENGTH_SHORT).show();
+                refresh();
+            });
+            list.addView(rollback);
+        }
+    }
+    @Override protected void onActivityResult(int request,int result,Intent data) {
+        super.onActivityResult(request,result,data);
+        if(request==PICK_PACKAGE && result==RESULT_OK && data!=null && data.getData()!=null) {
+            try(java.io.InputStream in=getContentResolver().openInputStream(data.getData())) {
+                ExtensionRegistry.Entry e=registry.install(in,android.os.Build.VERSION.SDK_INT);
+                Toast.makeText(this,"Installed "+e.name+" ("+e.version+")",Toast.LENGTH_LONG).show();
+                refresh();
+            } catch(Exception ex) {
+                Toast.makeText(this,"Install failed: "+ex.getMessage(),Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+}
+''')
+
+manifest = Path("app/src/main/AndroidManifest.xml")
+m = manifest.read_text()
+if "com.benny.openlauncher.mimax.ExtensionManagerActivity" not in m:
+    m = m.replace('</application>', '''        <activity
+            android:name="com.benny.openlauncher.mimax.ExtensionManagerActivity"
+            android:exported="false"
+            android:label="Mi_Max Extensions" />
+    </application>''', 1)
+manifest.write_text(m)
+
+master = Path("app/src/main/res/xml/preferences_master.xml")
+m = master.read_text()
+if "Mi_Max Extensions" not in m:
+    marker = '        <PreferenceScreen\n            android:icon="@drawable/ic_info_outline_dark_24dp"'
+    entry = '''        <Preference
+            android:title="Mi_Max Extensions"
+            android:summary="Import and manage declarative extension packages">
+            <intent android:targetPackage="com.mimax.launcher"
+                android:targetClass="com.benny.openlauncher.mimax.ExtensionManagerActivity" />
+        </Preference>
+
+'''
+    if marker not in m:
+        raise SystemExit("Could not find About preference insertion point for Extensions")
+    master.write_text(m.replace(marker, entry + marker, 1))
