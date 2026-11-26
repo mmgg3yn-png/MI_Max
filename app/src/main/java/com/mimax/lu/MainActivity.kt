@@ -110,6 +110,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     var columns by remember { mutableIntStateOf(prefs.getInt("columns",4)) }
     var hideHomeLabels by remember { mutableStateOf(prefs.getBoolean("hide_home_labels",false)) }
     var hideDrawerLabels by remember { mutableStateOf(prefs.getBoolean("hide_drawer_labels",false)) }
+    var hiddenPackages by remember { mutableStateOf(prefs.getStringSet("hidden_packages", emptySet())?.toSet() ?: emptySet()) }
     var theme by remember { mutableStateOf(prefs.getString("theme","Midnight Glass") ?: "Midnight Glass") }
     var endpoint by remember { mutableStateOf(prefs.getString("ai_endpoint","") ?: "") }
     var model by remember { mutableStateOf(prefs.getString("ai_model","") ?: "") }
@@ -159,7 +160,8 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
             AppEntry(r.loadLabel(pm).toString(),ai.packageName,iconPacks.iconFor(iconPack, ai.packageName) ?: r.loadIcon(pm))
         }.distinctBy{it.pkg}.sortedBy{it.name.lowercase()}
     }
-    val filtered=apps.filter{it.name.contains(query,true)}
+    val filtered=apps.filter{it.name.contains(query,true) && it.pkg !in hiddenPackages}
+    val visibleHomeApps=apps.filter{it.pkg !in hiddenPackages}
     fun save(k:String,v:Any) { prefs.edit().apply {
         when(v){ is Float->putFloat(k,v); is Int->putInt(k,v); is String->putString(k,v); is Boolean->putBoolean(k,v) }
     }.apply() }
@@ -181,14 +183,14 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 Spacer(Modifier.height(15.dp))
                 AnimatedContent(targetState=tab,transitionSpec={ androidx.compose.animation.fadeIn(tween(animationDuration)) togetherWith androidx.compose.animation.fadeOut(tween((animationDuration/2).coerceAtLeast(60))) },label="pages") { page ->
                     when(page) {
-                        "apps" -> AppsPage(filtered,query,iconShape,columns,hideDrawerLabels,{query=it})
+                        "apps" -> AppsPage(apps,query,iconShape,columns,hideDrawerLabels,hiddenPackages,{ next -> hiddenPackages=next; prefs.edit().putStringSet("hidden_packages",next).apply() },{query=it})
                         "ai" -> AiChatPage(endpoint,model,apiKey)
                         "widgets" -> WidgetsPage(widgetController)
                         "extensions" -> ExtensionsPage()
                         "themes" -> ThemesPage(theme,{theme=it;save("theme",it)})
                         "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},iconPack,{iconPack=it;save("icon_pack",it)},wallpaperUri,{wallpaperPicker.launch(arrayOf("image/*"))},{wallpaperUri="";prefs.edit().remove("wallpaper_uri").apply()},fontPath,{fontPicker.launch(arrayOf("font/ttf","font/otf","application/octet-stream"))},{fontPath="";prefs.edit().remove("font_path").apply()},iconShape,{iconShape=it;save("icon_shape",it)},animationDuration,{animationDuration=it;save("animation_duration",it)},hideHomeLabels,{hideHomeLabels=it;save("hide_home_labels",it)},hideDrawerLabels,{hideDrawerLabels=it;save("hide_drawer_labels",it)},{tab="account"})
                         "account" -> AccountPage { showAccount=false;tab="settings" }
-                        else -> HomePage(apps,columns,opacity,widgetController,iconShape,hideHomeLabels,{tab="apps"},{tab="settings"})
+                        else -> HomePage(visibleHomeApps,columns,opacity,widgetController,iconShape,hideHomeLabels,{tab="apps"},{tab="settings"})
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -428,14 +430,20 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         )
     }
 }
-@Composable private fun AppsPage(apps:List<AppEntry>,query:String,iconShape:String,cols:Int,hideLabels:Boolean,onQuery:(String)->Unit) {
+@Composable private fun AppsPage(apps:List<AppEntry>,query:String,iconShape:String,cols:Int,hideLabels:Boolean,hiddenPackages:Set<String>,onHiddenChange:(Set<String>)->Unit,onQuery:(String)->Unit) {
+    var selectedToHide by remember { mutableStateOf<AppEntry?>(null) }
+    var showHidden by remember { mutableStateOf(false) }
+    val visibleApps = apps.filter { it.pkg !in hiddenPackages && it.name.contains(query,true) }
+    val hiddenApps = apps.filter { it.pkg in hiddenPackages }
     Column {
-        Text("App Library",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold)
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) { Text("App Library",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f)); TextButton(onClick={showHidden=true}) { Text("Hidden apps") } }
         Spacer(Modifier.height(10.dp))
         GlassInput(query,onQuery,"Search installed apps")
         Spacer(Modifier.height(10.dp))
-        LazyVerticalGrid(columns=GridCells.Fixed(cols),modifier=Modifier.weight(1f),contentPadding=PaddingValues(bottom=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) { items(apps,key={it.pkg}){AppIcon(it,iconShape=iconShape,showLabel=!hideLabels)} }
+        LazyVerticalGrid(columns=GridCells.Fixed(cols),modifier=Modifier.weight(1f),contentPadding=PaddingValues(bottom=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) { items(visibleApps,key={it.pkg}){app->AppIcon(app,iconShape=iconShape,showLabel=!hideLabels,onLongClick={selectedToHide=app})} }
     }
+    selectedToHide?.let { app -> AlertDialog(onDismissRequest={selectedToHide=null},title={Text("Hide app?")},text={Text("Hide ${app.name} from Home and App Library?")},confirmButton={TextButton(onClick={onHiddenChange(hiddenPackages+app.pkg);selectedToHide=null}){Text("Hide")}},dismissButton={TextButton(onClick={selectedToHide=null}){Text("Cancel")}}) }
+    if(showHidden) AlertDialog(onDismissRequest={showHidden=false},title={Text("Hidden apps")},text={Column { if(hiddenApps.isEmpty()) Text("No hidden apps") else hiddenApps.forEach { app -> Row(verticalAlignment=Alignment.CenterVertically) { Text(app.name,modifier=Modifier.weight(1f));TextButton(onClick={onHiddenChange(hiddenPackages-app.pkg)}) { Text("Show") } } } }},confirmButton={TextButton(onClick={showHidden=false}){Text("Close")}})
 }
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable private fun AppIcon(app:AppEntry,iconShape:String="squircle",showLabel:Boolean=true,onLongClick:()->Unit = {}) {
