@@ -114,6 +114,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                         "apps" -> AppsPage(filtered,query,{query=it})
                         "ai" -> AiChatPage(endpoint,model,apiKey)
                         "widgets" -> WidgetsPage(widgetController)
+                        "extensions" -> ExtensionsPage()
                         "themes" -> ThemesPage(theme,{theme=it;save("theme",it)})
                         "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},{showAccount=true})
                         "account" -> AccountPage { showAccount=false;tab="settings" }
@@ -122,7 +123,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 }
                 Spacer(Modifier.weight(1f))
                 NavigationBar(containerColor=Color.White.copy(opacity),tonalElevation=0.dp) {
-                    listOf(Triple("home","Home",Icons.Default.Home),Triple("apps","Apps",Icons.Default.Apps),Triple("ai","AI",Icons.Default.AutoAwesome),Triple("widgets","Widgets",Icons.Default.Widgets),Triple("themes","Themes",Icons.Default.Palette),Triple("settings","Settings",Icons.Default.Settings)).forEach { (id,label,ic) ->
+                    listOf(Triple("home","Home",Icons.Default.Home),Triple("apps","Apps",Icons.Default.Apps),Triple("ai","AI",Icons.Default.AutoAwesome),Triple("widgets","Widgets",Icons.Default.Widgets),Triple("extensions","Extensions",Icons.Default.Extension),Triple("themes","Themes",Icons.Default.Palette),Triple("settings","Settings",Icons.Default.Settings)).forEach { (id,label,ic) ->
                         NavigationBarItem(selected=tab==id,onClick={tab=id},icon={Icon(ic,null)},label={Text(label,fontSize=10.sp)})
                     }
                 }
@@ -435,6 +436,72 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
     }
 }
+@Composable private fun ExtensionsPage() {
+    val context = LocalContext.current
+    val manager = remember { ExtensionPackageManager(context) }
+    var extensions by remember { mutableStateOf(manager.discover()) }
+    var message by remember { mutableStateOf("") }
+    val installPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, ExtensionPackageManager.MIME_APK)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                context.startActivity(intent)
+                message = "Android package installer opened. Return here and tap Refresh after installation."
+            }.onFailure { message = "Could not open package installer: ${it.message}" }
+        }
+    }
+    Column(Modifier.fillMaxSize()) {
+        Text("Extension Manager",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold)
+        Text("Install separate extension APKs; they can be updated without rebuilding Mi_Max Launcher.",color=Color.White.copy(.65f),fontSize=11.sp)
+        Spacer(Modifier.height(9.dp))
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            Button(onClick={installPicker.launch(arrayOf(ExtensionPackageManager.MIME_APK,"application/octet-stream"))},modifier=Modifier.weight(1f)) { Text("Install extension") }
+            OutlinedButton(onClick={extensions=manager.discover()},modifier=Modifier.weight(1f)) { Text("Refresh") }
+        }
+        OutlinedButton(onClick={
+            manager.disableAll()
+            extensions=manager.discover()
+            message="Recovery mode: all registered extensions are disabled. Re-enable trusted extensions individually."
+        },modifier=Modifier.fillMaxWidth()) { Text("Disable all • Recovery mode") }
+        if(message.isNotBlank()) Text(message,color=Color(0xFFB9D9FF),fontSize=11.sp)
+        Spacer(Modifier.height(8.dp))
+        if(extensions.isEmpty()) {
+            Text("No compatible Mi_Max extension APKs detected.",color=Color.White.copy(.7f))
+            Text("An extension must expose an Activity with action com.mimax.lu.action.EXTENSION_TOOL and metadata com.mimax.lu.extension=true.",color=Color.White.copy(.5f),fontSize=10.sp)
+        }
+        androidx.compose.foundation.lazy.LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            items(extensions,key={it.packageName}) { extension ->
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(glass).padding(12.dp)) {
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(extension.label,color=Color.White,fontWeight=FontWeight.SemiBold)
+                            Text("${extension.packageName} • v${extension.versionName}",color=Color.White.copy(.55f),fontSize=10.sp)
+                        }
+                        Switch(checked=extension.enabled,onCheckedChange={
+                            manager.setEnabled(extension.packageName,it)
+                            extensions=manager.discover()
+                        })
+                    }
+                    if(extension.requestedPermissions.isNotEmpty()) {
+                        Text("Requested permissions: ${extension.requestedPermissions.size} • denied: ${extension.deniedPermissions.size}",color=Color.White.copy(.62f),fontSize=10.sp)
+                    }
+                    extension.lastError?.let { Text("Last error: $it",color=Color(0xFFFFB4AB),fontSize=10.sp) }
+                    Row(horizontalArrangement=Arrangement.End,modifier=Modifier.fillMaxWidth()) {
+                        TextButton(onClick={
+                            manager.launch(extension).fold(
+                                { message="Opened ${extension.label}" },
+                                { message="Extension failed and was disabled: ${it.message}" }
+                            )
+                            extensions=manager.discover()
+                        },enabled=extension.enabled) { Text("Open tool") }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable private fun ThemesPage(current:String,onChoose:(String)->Unit) {
     val context = LocalContext.current
     val installed = remember { ThemePackManager(context).installed() }
