@@ -12,6 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -26,6 +27,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -178,6 +180,34 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
 }
 @Composable private fun HomePage(apps:List<AppEntry>,cols:Int,alpha:Float,onAll:()->Unit) {
     val ctx=LocalContext.current
+    val store = remember { LauncherLayoutStore(ctx) }
+    var folders by remember { mutableStateOf(store.folders()) }
+    var selectedForFolder by remember { mutableStateOf<AppEntry?>(null) }
+    var openedFolder by remember { mutableStateOf<LauncherLayoutStore.Folder?>(null) }
+    var folderName by remember { mutableStateOf("Folder") }
+    var showFolderName by remember { mutableStateOf(false) }
+    val membership = remember(folders, apps) { store.entries().associate { it.packageName to it.folderId } }
+    val visibleApps = apps.filter { membership[it.pkg] == null }
+    fun longPressApp(app: AppEntry) {
+        val first = selectedForFolder
+        if (first == null) {
+            selectedForFolder = app
+        } else if (first.pkg != app.pkg) {
+            val id = java.util.UUID.randomUUID().toString()
+            val nextFolder = LauncherLayoutStore.Folder(id, "Folder", 0, folders.size)
+            val oldEntries = store.entries().filterNot { it.packageName == first.pkg || it.packageName == app.pkg }
+            store.saveEntries(oldEntries + listOf(
+                LauncherLayoutStore.Entry(first.pkg, first.pkg, first.name, folderId=id),
+                LauncherLayoutStore.Entry(app.pkg, app.pkg, app.name, folderId=id)
+            ))
+            folders = folders + nextFolder
+            store.saveFolders(folders)
+            selectedForFolder = null
+            folderName = "Folder"
+            openedFolder = nextFolder
+            showFolderName = true
+        }
+    }
     Column {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Text("Home",color=Color.White,fontSize=21.sp,fontWeight=FontWeight.SemiBold)
@@ -185,15 +215,75 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-            GlassTile("Weather","Widget preview","☀",Modifier.weight(1f))
+            GlassTile("Weather","Add a real Android widget in Widgets","☀",Modifier.weight(1f))
             GlassTile("Calendar",SimpleDateFormat("EEE, d MMM",Locale.getDefault()).format(Date()),"▦",Modifier.weight(1f))
         }
         Spacer(Modifier.height(15.dp))
         Text("Pinned apps",color=Color.White.copy(.8f),fontSize=13.sp)
-        Spacer(Modifier.height(8.dp))
-        LazyVerticalGrid(columns=GridCells.Fixed(cols),modifier=Modifier.heightIn(max=330.dp),contentPadding=PaddingValues(bottom=8.dp),horizontalArrangement=Arrangement.spacedBy(9.dp),verticalArrangement=Arrangement.spacedBy(13.dp)) {
-            items(apps.take(16),key={it.pkg}) { AppIcon(it) }
+        if (selectedForFolder != null) {
+            Text("Selected: ${selectedForFolder!!.name} • hold another app to create a folder",color=Color(0xFFB9D9FF),fontSize=11.sp)
+        } else {
+            Text("Hold two apps in sequence to group them into a folder.",color=Color.White.copy(.5f),fontSize=10.sp)
         }
+        Spacer(Modifier.height(8.dp))
+        if (folders.isNotEmpty()) {
+            Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+                folders.forEach { folder ->
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(17.dp)).background(Color.White.copy(alpha.coerceIn(.05f,.45f)))
+                            .clickable { openedFolder = folder }.padding(10.dp),
+                        horizontalAlignment=Alignment.CenterHorizontally
+                    ) {
+                        Text("▦",color=Color.White,fontSize=24.sp)
+                        Text(folder.title,color=Color.White,fontSize=11.sp,maxLines=1)
+                        Text("${store.entries().count { it.folderId == folder.id }} apps",color=Color.White.copy(.55f),fontSize=9.sp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        LazyVerticalGrid(columns=GridCells.Fixed(cols),modifier=Modifier.heightIn(max=330.dp),contentPadding=PaddingValues(bottom=8.dp),horizontalArrangement=Arrangement.spacedBy(9.dp),verticalArrangement=Arrangement.spacedBy(13.dp)) {
+            items(visibleApps.take(24),key={it.pkg}) { AppIcon(it, onLongClick={ longPressApp(it) }) }
+        }
+    }
+    if (showFolderName && openedFolder != null) {
+        AlertDialog(
+            onDismissRequest={showFolderName=false},
+            title={Text("Name folder")},
+            text={ BasicTextField(value=folderName,onValueChange={folderName=it},singleLine=true) },
+            confirmButton={ TextButton(onClick={
+                val target=openedFolder!!
+                folders=folders.map { if(it.id==target.id) it.copy(title=folderName.ifBlank{"Folder"}) else it }
+                store.saveFolders(folders)
+                openedFolder=folders.firstOrNull{it.id==target.id}
+                showFolderName=false
+            }) { Text("Save") } },
+            dismissButton={ TextButton(onClick={showFolderName=false}) { Text("Cancel") } }
+        )
+    }
+    openedFolder?.takeIf { !showFolderName }?.let { folder ->
+        val folderApps=store.entries().filter { it.folderId==folder.id }.mapNotNull { entry -> apps.firstOrNull{it.pkg==entry.packageName} }
+        AlertDialog(
+            onDismissRequest={openedFolder=null},
+            title={Text(folder.title)},
+            text={
+                Column(verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                    folderApps.forEach { app ->
+                        TextButton(onClick={ctx.packageManager.getLaunchIntentForPackage(app.pkg)?.let(ctx::startActivity)}) {
+                            Text(app.name)
+                        }
+                    }
+                    if(folderApps.isEmpty()) Text("No installed apps in this folder.")
+                }
+            },
+            confirmButton={TextButton(onClick={openedFolder=null}) { Text("Close") }},
+            dismissButton={TextButton(onClick={
+                store.saveEntries(store.entries().filterNot{it.folderId==folder.id})
+                folders=folders.filterNot{it.id==folder.id}
+                store.saveFolders(folders)
+                openedFolder=null
+            }) { Text("Delete folder") }}
+        )
     }
 }
 @Composable private fun AppsPage(apps:List<AppEntry>,query:String,onQuery:(String)->Unit) {
@@ -205,7 +295,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         LazyVerticalGrid(columns=GridCells.Fixed(4),modifier=Modifier.weight(1f),contentPadding=PaddingValues(bottom=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) { items(apps,key={it.pkg}){AppIcon(it)} }
     }
 }
-@Composable private fun AppIcon(app:AppEntry) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)\n@Composable private fun AppIcon(app:AppEntry,onLongClick:()->Unit = {}) {
     val ctx=LocalContext.current
     Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.clickable {
         ctx.packageManager.getLaunchIntentForPackage(app.pkg)?.let{ctx.startActivity(it)}
@@ -324,7 +414,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 if(current==name) Icon(Icons.Default.Check,color=Color(0xFFB9D9FF),contentDescription="Applied")
             }
         }
-        Text("Theme packs, icon packs, fonts and wallpapers can be imported in the next store module.",color=Color.White.copy(.6f),fontSize=11.sp)
+        Text("Only built-in themes are currently applied. Imported theme-pack application, icon packs, font packs and wallpaper packs are not implemented yet.",color=Color.White.copy(.6f),fontSize=11.sp)
     }
 }
 @Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,onAccount:()->Unit) {
@@ -353,7 +443,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         GlassInput(endpoint,onEndpoint,"AI API endpoint")
         Spacer(Modifier.height(7.dp));GlassInput(model,onModel,"Model ID")
         Spacer(Modifier.height(7.dp));GlassInput(key,onKey,"API key (stored locally)")
-        Text("This stores connection details; live AI chat/API validation is not yet wired in this build.",color=Color.White.copy(.6f),fontSize=11.sp)
+        Text("Requests use the configured OpenAI-compatible HTTPS endpoint and selected model.",color=Color.White.copy(.6f),fontSize=11.sp)
         Spacer(Modifier.height(9.dp))
         HorizontalDivider(color=Color.White.copy(.18f),modifier=Modifier.padding(vertical=9.dp))
         Text("Backup & themes",color=Color.White,fontWeight=FontWeight.SemiBold)
