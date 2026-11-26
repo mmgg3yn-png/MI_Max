@@ -77,7 +77,8 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     var model by remember { mutableStateOf(prefs.getString("ai_model","") ?: "") }
     var apiKey by remember { mutableStateOf(prefs.getString("ai_key","") ?: "") }
     var showAccount by remember { mutableStateOf(false) }
-    val colors = when(theme) {
+    val customTheme = remember(theme) { ThemePackManager(ctx).installed().firstOrNull { it.id == theme } }
+    val colors = customTheme?.let { listOf(Color(it.backgroundStart), Color(it.backgroundEnd), Color(it.backgroundEnd)) } ?: when(theme) {
         "Snow Glass" -> listOf(Color(0xFF66788C),Color(0xFF263747),Color(0xFF101923))
         "Ocean" -> listOf(Color(0xFF126E82),Color(0xFF132C42),Color(0xFF07131F))
         "Aurora" -> listOf(Color(0xFF59477A),Color(0xFF253B58),Color(0xFF101522))
@@ -96,7 +97,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     fun save(k:String,v:Any) { prefs.edit().apply {
         when(v){ is Float->putFloat(k,v); is Int->putInt(k,v); is String->putString(k,v) }
     }.apply() }
-    MaterialTheme(colorScheme=darkColorScheme(primary=Color(0xFFB9D9FF),surface=Color(0xFF202B3A),background=Color(0xFF0B111B))) {
+    MaterialTheme(colorScheme=darkColorScheme(primary=customTheme?.let { Color(it.accent) } ?: Color(0xFFB9D9FF),surface=Color(0xFF202B3A),background=Color(0xFF0B111B))) {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(colors))) {
             Column(Modifier.fillMaxSize().padding(horizontal=18.dp)) {
                 Spacer(Modifier.height(38.dp))
@@ -435,9 +436,11 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     }
 }
 @Composable private fun ThemesPage(current:String,onChoose:(String)->Unit) {
+    val context = LocalContext.current
+    val installed = remember { ThemePackManager(context).installed() }
     Column {
-        Text("Theme Store",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold)
-        Text("Built-in theme collection • more online packs can be added",color=Color.White.copy(.65f),fontSize=12.sp)
+        Text("Theme Collection",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold)
+        Text("Built-in themes and imported Mi_Max theme packs.",color=Color.White.copy(.65f),fontSize=12.sp)
         Spacer(Modifier.height(14.dp))
         listOf("Midnight Glass","Snow Glass","Ocean","Aurora").forEach { name->
             Row(Modifier.fillMaxWidth().padding(vertical=5.dp).clip(RoundedCornerShape(20.dp)).background(glass).clickable{onChoose(name)}.padding(15.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -447,7 +450,21 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 if(current==name) Icon(Icons.Default.Check,color=Color(0xFFB9D9FF),contentDescription="Applied")
             }
         }
-        Text("Only built-in themes are currently applied. Imported theme-pack application, icon packs, font packs and wallpaper packs are not implemented yet.",color=Color.White.copy(.6f),fontSize=11.sp)
+        if (installed.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text("Imported theme packs",color=Color.White,fontWeight=FontWeight.SemiBold)
+            installed.forEach { pack ->
+                Row(Modifier.fillMaxWidth().padding(vertical=5.dp).clip(RoundedCornerShape(20.dp)).background(glass).clickable{onChoose(pack.id)}.padding(15.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Box(Modifier.size(38.dp).clip(CircleShape).background(Brush.linearGradient(listOf(Color(pack.backgroundStart),Color(pack.backgroundEnd)))))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(pack.name,color=Color.White)
+                        Text("Imported pack • ${pack.iconShape} icons",color=Color.White.copy(.55f),fontSize=10.sp)
+                    }
+                    if(current==pack.id) Icon(Icons.Default.Check,color=Color(0xFFB9D9FF),contentDescription="Applied")
+                }
+            }
+        }
     }
 }
 @Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,onAccount:()->Unit) {
