@@ -6,6 +6,8 @@ import android.net.Uri
 import android.provider.Settings
 import android.os.Bundle
 import android.graphics.BitmapFactory
+import java.io.File
+import java.io.FileOutputStream
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -44,6 +46,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.LocalTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
@@ -86,6 +93,16 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     var apiKey by remember { mutableStateOf(prefs.getString("ai_key","") ?: "") }
     var iconPack by remember { mutableStateOf(prefs.getString("icon_pack","") ?: "") }
     var wallpaperUri by remember { mutableStateOf(prefs.getString("wallpaper_uri","") ?: "") }
+    var fontPath by remember { mutableStateOf(prefs.getString("font_path","") ?: "") }
+    val fontPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) runCatching {
+            val target = File(ctx.filesDir, "custom_launcher_font.ttf")
+            ctx.contentResolver.openInputStream(uri)?.use { input -> FileOutputStream(target).use { output -> input.copyTo(output) } } ?: error("Cannot read font file")
+            fontPath = target.absolutePath
+            prefs.edit().putString("font_path", fontPath).apply()
+        }
+    }
+    val customFont = remember(fontPath) { runCatching { if(fontPath.isBlank()) null else FontFamily(Font(File(fontPath))) }.getOrNull() }
     val wallpaperPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -122,6 +139,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         when(v){ is Float->putFloat(k,v); is Int->putInt(k,v); is String->putString(k,v) }
     }.apply() }
     MaterialTheme(colorScheme=darkColorScheme(primary=customTheme?.let { Color(it.accent) } ?: Color(0xFFB9D9FF),surface=Color(0xFF202B3A),background=Color(0xFF0B111B))) {
+        CompositionLocalProvider(LocalTextStyle provides TextStyle.Default.copy(fontFamily=customFont ?: FontFamily.Default)) {
         Box(Modifier.fillMaxSize()) {
             if (wallpaperBitmap != null) {
                 Image(bitmap=wallpaperBitmap,contentDescription=null,modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
@@ -144,7 +162,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                         "widgets" -> WidgetsPage(widgetController)
                         "extensions" -> ExtensionsPage()
                         "themes" -> ThemesPage(theme,{theme=it;save("theme",it)})
-                        "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},iconPack,{iconPack=it;save("icon_pack",it)},wallpaperUri,{wallpaperPicker.launch(arrayOf("image/*"))},{wallpaperUri="";prefs.edit().remove("wallpaper_uri").apply()},{tab="account"})
+                        "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},iconPack,{iconPack=it;save("icon_pack",it)},wallpaperUri,{wallpaperPicker.launch(arrayOf("image/*"))},{wallpaperUri="";prefs.edit().remove("wallpaper_uri").apply()},fontPath,{fontPicker.launch(arrayOf("font/ttf","font/otf","application/octet-stream"))},{fontPath="";prefs.edit().remove("font_path").apply()},{tab="account"})
                         "account" -> AccountPage { showAccount=false;tab="settings" }
                         else -> HomePage(apps,columns,opacity,{tab="apps"},{tab="settings"})
                     }
@@ -158,6 +176,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 Spacer(Modifier.height(9.dp))
             }
             }
+        }
         }
         if(showAccount) AccountDialog(onDismiss={showAccount=false})
     }
@@ -572,7 +591,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
     }
 }
-@Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,iconPack:String,onIconPack:(String)->Unit,wallpaperUri:String,onChooseWallpaper:()->Unit,onClearWallpaper:()->Unit,onAccount:()->Unit) {
+@Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,iconPack:String,onIconPack:(String)->Unit,wallpaperUri:String,onChooseWallpaper:()->Unit,onClearWallpaper:()->Unit,fontPath:String,onChooseFont:()->Unit,onClearFont:()->Unit,onAccount:()->Unit) {
     val context = LocalContext.current
     var backupMessage by remember { mutableStateOf("") }
     val backupManager = remember { LauncherBackupManager(context) }
@@ -599,6 +618,13 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick=onChooseWallpaper,modifier=Modifier.weight(1f)) { Text("Choose wallpaper") }
             OutlinedButton(onClick=onClearWallpaper,modifier=Modifier.weight(1f),enabled=wallpaperUri.isNotBlank()) { Text("Reset") }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Font",color=Color.White,fontSize=13.sp)
+        Text(if(fontPath.isBlank()) "System font" else "Custom font installed",color=Color.White.copy(.55f),fontSize=10.sp)
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick=onChooseFont,modifier=Modifier.weight(1f)) { Text("Choose .ttf / .otf") }
+            OutlinedButton(onClick=onClearFont,modifier=Modifier.weight(1f),enabled=fontPath.isNotBlank()) { Text("Reset") }
         }
         HorizontalDivider(color=Color.White.copy(.18f),modifier=Modifier.padding(vertical=9.dp))
         Text("Home gestures",color=Color.White,fontWeight=FontWeight.SemiBold)
