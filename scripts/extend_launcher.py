@@ -763,7 +763,7 @@ print("Added switchable launcher profiles and daily Me Island theme scheduling w
 
 
 
-# Extend folder rendering with a separate per-app hide-label switch.
+# Extend folders with per-app label control and nested folder popups.
 group_popup = Path("app/src/main/java/com/benny/openlauncher/widget/GroupPopupView.java")
 g = group_popup.read_text()
 marker = "final View view = ItemViewFactory.getItemView(getContext(), callback, DragAction.Action.DESKTOP, groupItem);"
@@ -774,7 +774,84 @@ if "MiMaxPersonalization.applyFolder" not in g:
                 if (view instanceof AppItemView) {
                     com.benny.openlauncher.mimax.MiMaxPersonalization.applyFolder(getContext(), (AppItemView) view, groupItem);
                 }""", 1)
-    group_popup.write_text(g)
+# Keep one-item nested groups as folders rather than flattening them into the desktop.
+if "item._location != ItemPosition.Group" not in g:
+    g = g.replace("updateItem(callback, item, itemView);",
+                  "if (item._location != ItemPosition.Group) updateItem(callback, item, itemView);", 1)
+# A nested popup is a new overlay instance so the parent folder stays open underneath it.
+if "setOnClosedListener" not in g:
+    g = g.replace("    private TextView _textView;", "    private TextView _textView;\n    private Runnable _onClosed;")
+    insert = """
+    public void setOnClosedListener(Runnable listener) {
+        _onClosed = listener;
+    }
+
+"""
+    g = g.replace("    public boolean showPopup(final Item item", insert + "    public boolean showPopup(final Item item", 1)
+    g = g.replace("                setVisibility(View.INVISIBLE);\n            }",
+"""                setVisibility(View.INVISIBLE);
+                if (_onClosed != null) {
+                    Runnable callback = _onClosed;
+                    _onClosed = null;
+                    callback.run();
+                }
+            }""", 1)
+# Replace the original 'group item not found -> delete it' handling with explicit nested-folder handling.
+oldNested = """                final App app = Setup.appLoader().findItemApp(groupItem);
+                if (app == null) {
+                    removeItem(context, item, groupItem, (AppItemView) itemView);
+                } else {
+                    view.setOnClickListener(new OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            Tool.createScaleInScaleOutAnim(view, new Runnable() {
+                                @Override
+                                public void run() {
+                                    collapse();
+                                    setVisibility(View.INVISIBLE);
+                                    view.getContext().startActivity(groupItem.getIntent());
+                                }
+                            });
+                        }
+                    });
+                }"""
+newNested = """                if (groupItem.getType() == Item.Type.GROUP) {
+                    view.setOnClickListener(v -> {
+                        HomeActivity launcher = HomeActivity.Companion.getLauncher();
+                        if (launcher == null) return;
+                        android.view.ViewGroup content = launcher.findViewById(android.R.id.content);
+                        if (content == null) return;
+                        GroupPopupView nested = new GroupPopupView(getContext());
+                        content.addView(nested, new android.view.ViewGroup.LayoutParams(-1, -1));
+                        nested.setOnClosedListener(() -> content.removeView(nested));
+                        nested.post(() -> {
+                            if (!nested.showPopup(groupItem, view, callback)) content.removeView(nested);
+                        });
+                    });
+                } else {
+                    final App app = Setup.appLoader().findItemApp(groupItem);
+                    if (app == null) {
+                        removeItem(context, item, groupItem, (AppItemView) itemView);
+                    } else {
+                        view.setOnClickListener(new OnClickListener() {
+                            @Override
+                            public void onClick(View v) {
+                                Tool.createScaleInScaleOutAnim(view, new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        collapse();
+                                        setVisibility(View.INVISIBLE);
+                                        view.getContext().startActivity(groupItem.getIntent());
+                                    }
+                                });
+                            }
+                        });
+                    }
+                }"""
+if oldNested not in g:
+    raise SystemExit("Could not find original folder item click handler")
+g = g.replace(oldNested, newNested, 1)
+group_popup.write_text(g)
 
 
 # Local PIN gate for protected launcher settings and hidden-app management.
