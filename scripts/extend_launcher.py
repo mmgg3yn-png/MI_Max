@@ -90,6 +90,7 @@ import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import com.benny.openlauncher.model.Item;
 import com.benny.openlauncher.util.DragAction;
+import com.benny.openlauncher.util.Tool;
 import com.benny.openlauncher.widget.AppItemView;
 
 public final class MiMaxPersonalization {
@@ -122,6 +123,11 @@ public final class MiMaxPersonalization {
         view.setLabelTextSizeSp(p.getFloat("label_size",12f));
         if(p.contains("label_color")) view.setLabelTextColor(p.getInt("label_color",0xffffffff));
         view.setIconTint(p.getInt("icon_tint",0));
+        if(pkg!=null && p.contains("icon_size:"+pkg)) {
+            view.setIconSize(Tool.dp2px(p.getInt("icon_size:"+pkg,48)));
+            view.requestLayout();
+            view.invalidate();
+        }
     }
     public static void applyFolder(Context context,AppItemView view,Item item) {
         String pkg=null;
@@ -200,12 +206,15 @@ public final class MiMaxPersonalizationActivity extends Activity {
             Switch home=new Switch(this);home.setText("Hide label on Home");home.setTextColor(-1);home.setChecked(prefs.getBoolean("hide_home:"+pkg,false));card.addView(home);
             Switch drawer=new Switch(this);drawer.setText("Hide label in app drawer");drawer.setTextColor(-1);drawer.setChecked(prefs.getBoolean("hide_drawer:"+pkg,false));card.addView(drawer);
             Switch folder=new Switch(this);folder.setText("Hide label inside folders");folder.setTextColor(-1);folder.setChecked(prefs.getBoolean("hide_folder:"+pkg,false));card.addView(folder);
+            TextView iconSizeLabel=new TextView(this);iconSizeLabel.setTextColor(-1);iconSizeLabel.setText("Per-app icon size: "+prefs.getInt("icon_size:"+pkg,48)+" dp");card.addView(iconSizeLabel);
+            SeekBar iconSize=new SeekBar(this);iconSize.setMax(40);iconSize.setProgress(Math.max(0,Math.min(40,prefs.getInt("icon_size:"+pkg,48)-32)));card.addView(iconSize);
+            iconSize.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar b,int v,boolean u){iconSizeLabel.setText("Per-app icon size: "+(v+32)+" dp");}public void onStartTrackingTouch(SeekBar b){}public void onStopTrackingTouch(SeekBar b){}});
             Button icon=new Button(this);icon.setText(prefs.contains("icon_uri:"+pkg)?"Change custom icon":"Choose custom icon");card.addView(icon);
             icon.setOnClickListener(v->{pendingIconPackage=pkg;Intent pick=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(pick,PICK_ICON);});
             Button clearIcon=new Button(this);clearIcon.setText("Clear custom icon");clearIcon.setEnabled(prefs.contains("icon_uri:"+pkg));card.addView(clearIcon);
             clearIcon.setOnClickListener(v->{prefs.edit().remove("icon_uri:"+pkg).apply();clearIcon.setEnabled(false);icon.setText("Choose custom icon");});
             Button save=new Button(this);save.setText("Save "+label);card.addView(save);
-            save.setOnClickListener(v->{String text=alias.getText().toString().trim();prefs.edit().putString("label:"+pkg,text).putBoolean("hide_home:"+pkg,home.isChecked()).putBoolean("hide_drawer:"+pkg,drawer.isChecked()).putBoolean("hide_folder:"+pkg,folder.isChecked()).apply();Toast.makeText(this,"Saved "+label,Toast.LENGTH_SHORT).show();});
+            save.setOnClickListener(v->{String text=alias.getText().toString().trim();prefs.edit().putString("label:"+pkg,text).putBoolean("hide_home:"+pkg,home.isChecked()).putBoolean("hide_drawer:"+pkg,drawer.isChecked()).putBoolean("hide_folder:"+pkg,folder.isChecked()).putInt("icon_size:"+pkg,iconSize.getProgress()+32).apply();Toast.makeText(this,"Saved "+label,Toast.LENGTH_SHORT).show();});
         }
     }
     @Override protected void onActivityResult(int request,int result,Intent data){
@@ -766,3 +775,344 @@ if "MiMaxPersonalization.applyFolder" not in g:
                     com.benny.openlauncher.mimax.MiMaxPersonalization.applyFolder(getContext(), (AppItemView) view, groupItem);
                 }""", 1)
     group_popup.write_text(g)
+
+
+# Local PIN gate for protected launcher settings and hidden-app management.
+(JAVA / "MiMaxPrivacy.java").write_text(r'''package com.benny.openlauncher.mimax;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.util.Base64;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
+
+public final class MiMaxPrivacy {
+ private static final String FILE="mimax_privacy";
+ private static final int ITERATIONS=70000;
+ private MiMaxPrivacy(){}
+ public static boolean hasPin(Context c){return c.getSharedPreferences(FILE,0).contains("pin_hash");}
+ public static boolean lockHidden(Context c){return c.getSharedPreferences(FILE,0).getBoolean("lock_hidden",false);}
+ public static boolean lockSettings(Context c){return c.getSharedPreferences(FILE,0).getBoolean("lock_settings",false);}
+ public static void setLocks(Context c,boolean hidden,boolean settings){c.getSharedPreferences(FILE,0).edit().putBoolean("lock_hidden",hidden).putBoolean("lock_settings",settings).apply();}
+ public static void setPin(Context c,String pin) throws Exception {
+  if(pin==null||!pin.matches("[0-9]{6,12}"))throw new IllegalArgumentException("PIN must contain 6 to 12 digits");
+  byte[] salt=new byte[16];new SecureRandom().nextBytes(salt);
+  byte[] hash=derive(pin,salt);
+  c.getSharedPreferences(FILE,0).edit().putString("pin_salt",Base64.encodeToString(salt,Base64.NO_WRAP))
+   .putString("pin_hash",Base64.encodeToString(hash,Base64.NO_WRAP)).apply();
+ }
+ public static boolean verify(Context c,String pin){
+  try{
+   SharedPreferences p=c.getSharedPreferences(FILE,0);
+   String s=p.getString("pin_salt",null),h=p.getString("pin_hash",null);
+   if(s==null||h==null||pin==null)return false;
+   return MessageDigest.isEqual(derive(pin,Base64.decode(s,Base64.NO_WRAP)),Base64.decode(h,Base64.NO_WRAP));
+  }catch(Exception e){return false;}
+ }
+ private static byte[] derive(String pin,byte[] salt)throws Exception{
+  PBEKeySpec spec=new PBEKeySpec(pin.toCharArray(),salt,ITERATIONS,256);
+  try{return SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1").generateSecret(spec).getEncoded();}
+  finally{spec.clearPassword();}
+ }
+}
+''')
+
+(JAVA / "MiMaxPrivacyGateActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+import android.app.Activity;
+import android.content.Intent;
+import android.os.Bundle;
+import android.text.InputType;
+import android.view.Gravity;
+import android.widget.*;
+import com.benny.openlauncher.activity.SettingsActivity;
+import com.benny.openlauncher.activity.HideAppsActivity;
+
+public final class MiMaxPrivacyGateActivity extends Activity {
+ private EditText pin;
+ private TextView status;
+ private String target;
+ private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+ @Override protected void onCreate(Bundle b){super.onCreate(b);target=getIntent().getStringExtra("target");
+  LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setGravity(Gravity.CENTER);root.setPadding(dp(24),dp(24),dp(24),dp(24));root.setBackgroundColor(0xff101722);
+  TextView title=new TextView(this);title.setText("Mi_Max privacy lock");title.setTextColor(-1);title.setTextSize(24);root.addView(title);
+  TextView hint=new TextView(this);hint.setText("Enter your local PIN to continue.");hint.setTextColor(0xffc5d1df);hint.setPadding(0,dp(12),0,dp(12));root.addView(hint);
+  pin=new EditText(this);pin.setSingleLine(true);pin.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);pin.setHint("6–12 digit PIN");pin.setTextColor(-1);root.addView(pin);
+  Button unlock=new Button(this);unlock.setText("Unlock");root.addView(unlock);unlock.setOnClickListener(v->unlock());
+  Button cancel=new Button(this);cancel.setText("Cancel");root.addView(cancel);cancel.setOnClickListener(v->finish());
+  status=new TextView(this);status.setTextColor(0xffffa1a1);root.addView(status);setContentView(root);
+ }
+ private void unlock(){
+  if(!MiMaxPrivacy.verify(this,pin.getText().toString())){status.setText("Incorrect PIN");pin.setText("");return;}
+  if("hidden".equals(target)){startActivity(new Intent(this,HideAppsActivity.class));}
+  else if("settings".equals(target)){startActivity(new Intent(this,SettingsActivity.class).putExtra("mimax_verified",true));}
+  finish();
+ }
+}
+''')
+
+(JAVA / "MiMaxPrivacySettingsActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+import android.app.Activity;
+import android.os.Bundle;
+import android.text.InputType;
+import android.view.Gravity;
+import android.widget.*;
+
+public final class MiMaxPrivacySettingsActivity extends Activity {
+ private EditText first,confirm;
+ private Switch hidden,settings;
+ private TextView status;
+ private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+ @Override protected void onCreate(Bundle b){super.onCreate(b);
+  LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(20),dp(20),dp(20),dp(24));root.setBackgroundColor(0xff101722);
+  TextView title=new TextView(this);title.setText("Privacy and app lock");title.setTextColor(-1);title.setTextSize(23);root.addView(title);
+  TextView note=new TextView(this);note.setText("Protect the launcher's hidden-app list and settings pages with a local PIN. This is an in-launcher access gate, not an Android system app lock.");note.setTextColor(0xffc5d1df);note.setPadding(0,dp(8),0,dp(14));root.addView(note);
+  first=new EditText(this);first.setSingleLine(true);first.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);first.setHint(MiMaxPrivacy.hasPin(this)?"New PIN (6–12 digits)":"Create PIN (6–12 digits)");first.setTextColor(-1);root.addView(first);
+  confirm=new EditText(this);confirm.setSingleLine(true);confirm.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_VARIATION_PASSWORD);confirm.setHint("Confirm PIN");confirm.setTextColor(-1);root.addView(confirm);
+  Button save=new Button(this);save.setText(MiMaxPrivacy.hasPin(this)?"Change PIN":"Set PIN");root.addView(save);save.setOnClickListener(v->savePin());
+  hidden=new Switch(this);hidden.setText("Require PIN before opening hidden apps list");hidden.setTextColor(-1);hidden.setChecked(MiMaxPrivacy.lockHidden(this));root.addView(hidden);
+  settings=new Switch(this);settings.setText("Require PIN before opening launcher settings");settings.setTextColor(-1);settings.setChecked(MiMaxPrivacy.lockSettings(this));root.addView(settings);
+  Button apply=new Button(this);apply.setText("Save privacy options");root.addView(apply);apply.setOnClickListener(v->{
+   if((hidden.isChecked()||settings.isChecked())&&!MiMaxPrivacy.hasPin(this)){status.setText("Create a PIN before enabling protection");return;}
+   MiMaxPrivacy.setLocks(this,hidden.isChecked(),settings.isChecked());status.setText("Privacy options saved");
+  });
+  Button remove=new Button(this);remove.setText("Remove PIN and locks");root.addView(remove);remove.setOnClickListener(v->{getSharedPreferences("mimax_privacy",0).edit().clear().apply();hidden.setChecked(false);settings.setChecked(false);status.setText("PIN and screen locks removed");});
+  status=new TextView(this);status.setTextColor(0xffb8d9ff);status.setPadding(0,dp(12),0,0);root.addView(status);
+  setContentView(root);
+ }
+ private void savePin(){
+  String a=first.getText().toString(),b=confirm.getText().toString();
+  if(!a.equals(b)){status.setText("PIN entries do not match");return;}
+  try{MiMaxPrivacy.setPin(this,a);status.setText("PIN saved. Enable the protections below.");first.setText("");confirm.setText("");}
+  catch(Exception e){status.setText(e.getMessage());}
+ }
+}
+''')
+
+manifest=BASE / "AndroidManifest.xml"
+m=manifest.read_text()
+if "com.benny.openlauncher.mimax.MiMaxPrivacySettingsActivity" not in m:
+    m=m.replace("</application>",'''        <activity android:name="com.benny.openlauncher.mimax.MiMaxPrivacySettingsActivity" android:exported="false" android:label="Privacy and app lock" />
+        <activity android:name="com.benny.openlauncher.mimax.MiMaxPrivacyGateActivity" android:exported="false" android:label="Mi_Max privacy lock" />
+    </application>''',1)
+manifest.write_text(m)
+
+settings=Path("app/src/main/java/com/benny/openlauncher/activity/SettingsActivity.java")
+s=settings.read_text()
+anchor="        super.onCreate(b);"
+replacement=anchor+'''
+        if (com.benny.openlauncher.mimax.MiMaxPrivacy.lockSettings(this)
+                && !getIntent().getBooleanExtra("mimax_verified", false)) {
+            Intent gate = new Intent(this, com.benny.openlauncher.mimax.MiMaxPrivacyGateActivity.class);
+            gate.putExtra("target", "settings");
+            startActivity(gate);
+            finish();
+            return;
+        }'''
+if "MiMaxPrivacy.lockSettings" not in s:
+    if anchor not in s: raise SystemExit("SettingsActivity onCreate anchor missing")
+    settings.write_text(s.replace(anchor,replacement,1))
+
+drawer=Path("app/src/main/java/com/benny/openlauncher/fragment/SettingsAppDrawerFragment.java")
+s=drawer.read_text()
+anchor='''                Intent intent = new Intent(getActivity(), HideAppsActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
+                startActivity(intent);
+                return true;'''
+replacement='''                if (com.benny.openlauncher.mimax.MiMaxPrivacy.lockHiddenApps(getActivity())
+                        && com.benny.openlauncher.mimax.MiMaxPrivacy.hasPin(getActivity())) {
+                    Intent gate = new Intent(getActivity(), com.benny.openlauncher.mimax.MiMaxPrivacyGateActivity.class);
+                    gate.putExtra("target", "hidden");
+                    startActivity(gate);
+                } else {
+                    Intent intent = new Intent(getActivity(), HideAppsActivity.class);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
+                    startActivity(intent);
+                }
+                return true;'''
+if "MiMaxPrivacy.lockHiddenApps" not in s:
+    if anchor not in s: raise SystemExit("Settings drawer hidden apps anchor missing")
+    drawer.write_text(s.replace(anchor,replacement,1))
+
+master=BASE / "res/xml/preferences_master.xml"
+p=master.read_text()
+if "mimax_privacy_settings" not in p:
+    entry='''    <PreferenceCategory android:title="Mi_Max Privacy">
+        <Preference android:key="mimax_privacy_settings" android:title="Privacy and app lock"
+            android:summary="Protect hidden apps and launcher settings with a local PIN">
+            <intent android:targetPackage="com.mimax.launcher" android:targetClass="com.benny.openlauncher.mimax.MiMaxPrivacySettingsActivity" />
+        </Preference>
+    </PreferenceCategory>
+'''
+    p=p.replace("</PreferenceScreen>",entry+"</PreferenceScreen>",1)
+master.write_text(p)
+
+print("Added local PIN protection for hidden-app management and the Settings screen.")
+
+
+
+
+# App Library: categorized installed-app catalogue with live search and package launch.
+(JAVA / "MiMaxAppLibraryActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+
+import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.Gravity;
+import android.widget.*;
+import com.benny.openlauncher.util.AppSettings;
+import java.util.*;
+
+public final class MiMaxAppLibraryActivity extends Activity {
+ private LinearLayout list;
+ private EditText search;
+ private List<ResolveInfo> apps=new ArrayList<>();
+ private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+ @Override protected void onCreate(Bundle b){super.onCreate(b);
+  LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(16),dp(16),dp(16),dp(16));root.setBackgroundColor(0xff101722);
+  TextView title=new TextView(this);title.setText("App Library");title.setTextSize(24);title.setTextColor(-1);root.addView(title);
+  search=new EditText(this);search.setSingleLine(true);search.setHint("Search apps");search.setTextColor(-1);search.setHintTextColor(0xff91a1b4);root.addView(search);
+  ScrollView scroll=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+  Intent i=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+  @SuppressWarnings("deprecation") List<ResolveInfo> found=getPackageManager().queryIntentActivities(i,0);
+  TreeMap<String,ResolveInfo> unique=new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+  for(ResolveInfo r:found)if(r.activityInfo!=null)unique.put(r.activityInfo.packageName,r);
+  apps.addAll(unique.values());
+  search.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int count,int after){}public void onTextChanged(CharSequence s,int st,int before,int count){render(s.toString());}public void afterTextChanged(Editable e){}});
+  setContentView(root);render("");
+ }
+ private String category(ResolveInfo r){
+  if(android.os.Build.VERSION.SDK_INT<26)return "Other apps";
+  int c=r.activityInfo.applicationInfo.category;
+  if(c==ApplicationInfo.CATEGORY_GAME)return "Games";
+  if(c==ApplicationInfo.CATEGORY_AUDIO)return "Music and Audio";
+  if(c==ApplicationInfo.CATEGORY_VIDEO)return "Video";
+  if(c==ApplicationInfo.CATEGORY_IMAGE)return "Photos";
+  if(c==ApplicationInfo.CATEGORY_SOCIAL)return "Social";
+  if(c==ApplicationInfo.CATEGORY_NEWS)return "News";
+  if(c==ApplicationInfo.CATEGORY_MAPS)return "Maps and Travel";
+  if(c==ApplicationInfo.CATEGORY_PRODUCTIVITY)return "Productivity";
+  return "Other apps";
+ }
+ private void render(String q){
+  list.removeAllViews();
+  Set<String> hidden=new HashSet<>(AppSettings.get().getHiddenAppsList());
+  TreeMap<String,List<ResolveInfo>> groups=new TreeMap<>();
+  for(ResolveInfo r:apps){
+   String pkg=r.activityInfo.packageName;
+   if(hidden.contains(pkg))continue;
+   String name=r.loadLabel(getPackageManager()).toString();
+   if(!name.toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT))&&!pkg.toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT)))continue;
+   groups.computeIfAbsent(category(r),k->new ArrayList<>()).add(r);
+  }
+  for(Map.Entry<String,List<ResolveInfo>> group:groups.entrySet()){
+   TextView heading=new TextView(this);heading.setText(group.getKey());heading.setTextColor(0xffb8d9ff);heading.setTextSize(17);heading.setPadding(0,dp(14),0,dp(6));list.addView(heading);
+   for(ResolveInfo r:group.getValue()){
+    LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(8),dp(7),dp(8),dp(7));row.setBackgroundColor(0xff202b39);
+    LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(5);list.addView(row,lp);
+    ImageView icon=new ImageView(this);icon.setImageDrawable(r.loadIcon(getPackageManager()));row.addView(icon,new LinearLayout.LayoutParams(dp(40),dp(40)));
+    TextView label=new TextView(this);label.setText(r.loadLabel(getPackageManager()));label.setTextColor(-1);label.setTextSize(14);label.setPadding(dp(12),0,0,0);row.addView(label,new LinearLayout.LayoutParams(0,-2,1));
+    row.setOnClickListener(v->{try{Intent launch=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(new ComponentName(r.activityInfo.packageName,r.activityInfo.name));launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(launch);}catch(Exception ignored){}});
+   }
+  }
+  if(list.getChildCount()==0){TextView empty=new TextView(this);empty.setText("No apps found");empty.setTextColor(-1);list.addView(empty);}
+ }
+}
+''')
+
+# Focus Mode: temporarily add selected packages to OpenLauncher's hidden-app list,
+# preserving the user's original hidden list for exact restoration.
+(JAVA / "MiMaxFocusModeActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.os.Bundle;
+import android.widget.*;
+import com.benny.openlauncher.activity.HomeActivity;
+import com.benny.openlauncher.util.AppSettings;
+import java.util.*;
+
+public final class MiMaxFocusModeActivity extends Activity {
+ private static final String FILE="mimax_focus_mode";
+ private android.content.SharedPreferences prefs;
+ private LinearLayout list;
+ private final HashSet<String> selected=new HashSet<>();
+ private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+ @Override protected void onCreate(Bundle b){super.onCreate(b);prefs=getSharedPreferences(FILE,0);
+  selected.addAll(prefs.getStringSet("selected",new HashSet<>()));
+  LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(16),dp(16),dp(16),dp(20));root.setBackgroundColor(0xff101722);
+  TextView title=new TextView(this);title.setText("Focus Mode");title.setTextSize(23);title.setTextColor(-1);root.addView(title);
+  TextView note=new TextView(this);note.setText("Choose apps to hide temporarily from the launcher while Focus Mode is active. It does not block Android from opening those apps.");note.setTextColor(0xffc3cfdd);note.setPadding(0,dp(8),0,dp(12));root.addView(note);
+  ScrollView scroll=new ScrollView(this);list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+  populate();
+  Button save=new Button(this);save.setText("Save Focus selection");root.addView(save);save.setOnClickListener(v->{prefs.edit().putStringSet("selected",new HashSet<>(selected)).apply();Toast.makeText(this,"Focus selection saved",Toast.LENGTH_SHORT).show();});
+  Button toggle=new Button(this);toggle.setText(prefs.getBoolean("active",false)?"Turn Focus Mode off":"Turn Focus Mode on");root.addView(toggle);toggle.setOnClickListener(v->{if(prefs.getBoolean("active",false))disableFocus();else enableFocus();toggle.setText(prefs.getBoolean("active",false)?"Turn Focus Mode off":"Turn Focus Mode on");});
+  setContentView(root);
+ }
+ private void populate(){
+  Intent intent=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);PackageManager pm=getPackageManager();
+  @SuppressWarnings("deprecation") List<ResolveInfo> found=pm.queryIntentActivities(intent,0);
+  TreeMap<String,ResolveInfo> unique=new TreeMap<>(String.CASE_INSENSITIVE_ORDER);for(ResolveInfo r:found)if(r.activityInfo!=null)unique.put(r.activityInfo.packageName,r);
+  for(ResolveInfo r:unique.values()){
+   String pkg=r.activityInfo.packageName;CheckBox box=new CheckBox(this);box.setText(r.loadLabel(pm)+"  ("+pkg+")");box.setTextColor(-1);box.setChecked(selected.contains(pkg));box.setEnabled(!prefs.getBoolean("active",false));
+   box.setOnCheckedChangeListener((button,checked)->{if(checked)selected.add(pkg);else selected.remove(pkg);});
+   list.addView(box);
+  }
+ }
+ private void enableFocus(){
+  ArrayList<String> old=AppSettings.get().getHiddenAppsList();
+  prefs.edit().putString("previous_hidden",new org.json.JSONArray(old).toString()).putBoolean("active",true).apply();
+  HashSet<String> combined=new HashSet<>(old);combined.addAll(selected);
+  AppSettings.get().setHiddenAppsList(new ArrayList<>(combined));
+  refreshHome();Toast.makeText(this,"Focus Mode enabled",Toast.LENGTH_SHORT).show();
+ }
+ private void disableFocus(){
+  try{org.json.JSONArray a=new org.json.JSONArray(prefs.getString("previous_hidden","[]"));ArrayList<String> restore=new ArrayList<>();for(int i=0;i<a.length();i++)restore.add(a.getString(i));AppSettings.get().setHiddenAppsList(restore);}
+  catch(Exception e){Toast.makeText(this,"Could not restore the previous hidden-app list",Toast.LENGTH_LONG).show();return;}
+  prefs.edit().remove("previous_hidden").putBoolean("active",false).apply();
+  refreshHome();Toast.makeText(this,"Focus Mode disabled",Toast.LENGTH_SHORT).show();
+ }
+ private void refreshHome(){if(HomeActivity._launcher!=null)HomeActivity._launcher.recreate();}
+}
+''')
+
+manifest=BASE / "AndroidManifest.xml"
+m=manifest.read_text()
+if "com.benny.openlauncher.mimax.MiMaxAppLibraryActivity" not in m:
+ m=m.replace("</application>",'''        <activity android:name="com.benny.openlauncher.mimax.MiMaxAppLibraryActivity" android:exported="false" android:label="App Library" />
+        <activity android:name="com.benny.openlauncher.mimax.MiMaxFocusModeActivity" android:exported="false" android:label="Focus Mode" />
+    </application>''',1)
+manifest.write_text(m)
+
+master=BASE / "res/xml/preferences_master.xml"
+p=master.read_text()
+if "mimax_app_library" not in p:
+ entry='''    <PreferenceCategory android:title="Mi_Max Apps and Focus">
+        <Preference android:key="mimax_app_library" android:title="App Library"
+            android:summary="Browse installed apps in automatic categories with search">
+            <intent android:targetPackage="com.mimax.launcher" android:targetClass="com.benny.openlauncher.mimax.MiMaxAppLibraryActivity" />
+        </Preference>
+        <Preference android:key="mimax_focus_mode" android:title="Focus Mode"
+            android:summary="Temporarily hide selected apps from the launcher">
+            <intent android:targetPackage="com.mimax.launcher" android:targetClass="com.benny.openlauncher.mimax.MiMaxFocusModeActivity" />
+        </Preference>
+    </PreferenceCategory>
+'''
+ p=p.replace("</PreferenceScreen>",entry+"</PreferenceScreen>",1)
+master.write_text(p)
+
+# Back up Focus Mode state alongside launcher profiles.
+backup=Path("app/src/main/java/com/benny/openlauncher/util/BackupHelper.java")
+s=backup.read_text()
+s=s.replace('"mimax_theme_schedule.xml"\n    };','"mimax_theme_schedule.xml",\n        "mimax_focus_mode.xml",\n        "mimax_privacy.xml"\n    };')
+backup.write_text(s)
+
+print("Integrated App Library, searchable category groups and temporary Focus Mode with restoration of the prior hidden-app selection.")
