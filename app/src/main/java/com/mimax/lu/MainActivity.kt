@@ -106,6 +106,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 AnimatedContent(targetState=tab,transitionSpec={ androidx.compose.animation.fadeIn(tween(180)) togetherWith androidx.compose.animation.fadeOut(tween(120)) },label="pages") { page ->
                     when(page) {
                         "apps" -> AppsPage(filtered,query,{query=it})
+                        "ai" -> AiChatPage(endpoint,model,apiKey)
                         "widgets" -> WidgetsPage(widgetController)
                         "themes" -> ThemesPage(theme,{theme=it;save("theme",it)})
                         "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},{showAccount=true})
@@ -115,7 +116,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 }
                 Spacer(Modifier.weight(1f))
                 NavigationBar(containerColor=Color.White.copy(opacity),tonalElevation=0.dp) {
-                    listOf(Triple("home","Home",Icons.Default.Home),Triple("apps","Apps",Icons.Default.Apps),Triple("widgets","Widgets",Icons.Default.Widgets),Triple("themes","Themes",Icons.Default.Palette),Triple("settings","Settings",Icons.Default.Settings)).forEach { (id,label,ic) ->
+                    listOf(Triple("home","Home",Icons.Default.Home),Triple("apps","Apps",Icons.Default.Apps),Triple("ai","AI",Icons.Default.AutoAwesome),Triple("widgets","Widgets",Icons.Default.Widgets),Triple("themes","Themes",Icons.Default.Palette),Triple("settings","Settings",Icons.Default.Settings)).forEach { (id,label,ic) ->
                         NavigationBarItem(selected=tab==id,onClick={tab=id},icon={Icon(ic,null)},label={Text(label,fontSize=10.sp)})
                     }
                 }
@@ -126,6 +127,55 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     }
 }
 
+@Composable private fun AiChatPage(endpoint: String, model: String, apiKey: String) {
+    val scope = rememberCoroutineScope()
+    val client = remember { LauncherAiClient() }
+    var prompt by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val messages = remember { mutableStateListOf<Pair<String, String>>() }
+    Column(Modifier.fillMaxSize()) {
+        Text("Mi_Max AI", color=Color.White, fontSize=25.sp, fontWeight=FontWeight.Bold)
+        Text(if (model.isBlank()) "Set endpoint, model and API key in Settings" else "Model: $model", color=Color.White.copy(.65f), fontSize=11.sp)
+        Spacer(Modifier.height(8.dp))
+        androidx.compose.foundation.lazy.LazyColumn(
+            modifier=Modifier.weight(1f).fillMaxWidth(),
+            verticalArrangement=Arrangement.spacedBy(8.dp),
+            contentPadding=PaddingValues(vertical=8.dp)
+        ) {
+            items(messages.size) { index ->
+                val item = messages[index]
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp))
+                    .background(if (item.first == "You") Color.White.copy(.16f) else Color(0xFF23364A))
+                    .padding(12.dp)) {
+                    Text(item.first, color=Color(0xFFB9D9FF), fontSize=10.sp, fontWeight=FontWeight.Bold)
+                    Text(item.second, color=Color.White, fontSize=14.sp)
+                }
+            }
+            if (busy) item { Text("Mi_Max AI is responding…", color=Color.White.copy(.7f)) }
+        }
+        error?.let { Text(it, color=Color(0xFFFFB4AB), fontSize=12.sp) }
+        Row(verticalAlignment=Alignment.CenterVertically) {
+            GlassInput(prompt,{prompt=it},"Write a message…")
+            Spacer(Modifier.width(7.dp))
+            IconButton(onClick={
+                val text = prompt.trim()
+                if (text.isNotEmpty() && !busy) {
+                    prompt = ""
+                    error = null
+                    messages.add("You" to text)
+                    busy = true
+                    scope.launch {
+                        val result = client.complete(endpoint, model, apiKey, text)
+                        result.onSuccess { messages.add("Mi_Max AI" to it) }
+                            .onFailure { error = it.message ?: "AI request failed" }
+                        busy = false
+                    }
+                }
+            }, enabled=!busy) { Icon(Icons.Default.Send, contentDescription="Send", tint=Color.White) }
+        }
+    }
+}
 @Composable private fun HomePage(apps:List<AppEntry>,cols:Int,alpha:Float,onAll:()->Unit) {
     val ctx=LocalContext.current
     Column {
