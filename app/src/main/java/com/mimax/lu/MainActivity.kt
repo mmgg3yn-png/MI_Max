@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -141,7 +142,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     MaterialTheme(colorScheme=darkColorScheme(primary=customTheme?.let { Color(it.accent) } ?: Color(0xFFB9D9FF),surface=Color(0xFF202B3A),background=Color(0xFF0B111B)), typography=Typography(fontFamily=customFont ?: FontFamily.Default)) {
         Box(Modifier.fillMaxSize()) {
             if (wallpaperBitmap != null) {
-                Image(bitmap=wallpaperBitmap,contentDescription=null,modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
+                Image(bitmap=wallpaperBitmap,contentDescription=null,modifier=Modifier.fillMaxSize().blur(blur.dp),contentScale=ContentScale.Crop)
             }
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(colors.map { it.copy(alpha=if(wallpaperBitmap==null) 1f else .72f) }))) {
             Column(Modifier.fillMaxSize().padding(horizontal=18.dp)) {
@@ -289,8 +290,8 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-            GlassTile("Weather","Add a real Android widget in Widgets","☀",Modifier.weight(1f))
-            GlassTile("Calendar",SimpleDateFormat("EEE, d MMM",Locale.getDefault()).format(Date()),"▦",Modifier.weight(1f))
+            GlassTile("Weather","Add a real Android widget in Widgets","☀",Modifier.weight(1f),alpha)
+            GlassTile("Calendar",SimpleDateFormat("EEE, d MMM",Locale.getDefault()).format(Date()),"▦",Modifier.weight(1f),alpha)
         }
         val widgetPrefs = remember { ctx.getSharedPreferences("widget_host_v1",0) }
         val homeWidgetIds = remember { widgetPrefs.getStringSet("active_widget_ids", emptySet()).orEmpty().mapNotNull { it.toIntOrNull() } }
@@ -414,8 +415,8 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
     )
 }
-@Composable private fun GlassTile(title:String,sub:String,symbol:String,modifier:Modifier=Modifier) {
-    Column(modifier.clip(RoundedCornerShape(22.dp)).background(glass).padding(14.dp)) {
+@Composable private fun GlassTile(title:String,sub:String,symbol:String,modifier:Modifier=Modifier,alpha:Float=.13f) {
+    Column(modifier.clip(RoundedCornerShape(22.dp)).background(Color.White.copy(alpha.coerceIn(.05f,.75f))).padding(14.dp)) {
         Text(symbol,color=Color.White,fontSize=23.sp)
         Text(title,color=Color.White,fontWeight=FontWeight.SemiBold)
         Text(sub,color=Color.White.copy(.65f),fontSize=11.sp)
@@ -655,7 +656,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         Text("Settings",color=Color.White,fontSize=26.sp,fontWeight=FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         Text("Appearance & Liquid Glass",color=Color.White,fontWeight=FontWeight.SemiBold)
-        Text("Blur amount: ${blur.toInt()}",color=Color.White.copy(.7f));Slider(value=blur,onValueChange=onBlur,valueRange=0f..28f)
+        Text("Wallpaper blur: ${blur.toInt()}",color=Color.White.copy(.7f));Slider(value=blur,onValueChange=onBlur,valueRange=0f..28f)
         Text("Glass opacity: ${(alpha*100).toInt()}%",color=Color.White.copy(.7f));Slider(value=alpha,onValueChange=onAlpha,valueRange=.05f..0.75f)
         Text("Home grid columns: $cols",color=Color.White.copy(.7f));Slider(value=cols.toFloat(),onValueChange={onCols(it.toInt().coerceIn(3,6))},valueRange=3f..6f,steps=2)
         IconPackSettingRow(iconPack,onIconPack,context)
