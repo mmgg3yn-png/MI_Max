@@ -1,0 +1,16 @@
+{
+  "format": "mimax-island-theme",
+  "id": "ltin_compact",
+  "name": "LTIN Compact",
+  "style": "ltin",
+  "layout": "pill",
+  "animation": "spring",
+  "background": 4278190080,
+  "accent": 4294967295,
+  "blur": 12,
+  "cornerDp": 30,
+  "widthDp": 174,
+  "compactHeightDp": 34,
+  "expandedHeightDp": 96,
+  "animationMs": 240
+}

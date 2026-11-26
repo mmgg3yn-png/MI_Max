@@ -1488,3 +1488,228 @@ s=s.replace('"mimax_smart_widgets.xml"\n    };','"mimax_smart_widgets.xml",\n   
 backup.write_text(s)
 
 print("Added Mi_Max AI chat, encrypted local API key on supported Android versions, live catalogue of actual free OpenRouter models and temperature setting.")
+
+
+
+
+# Spotlight: search installed apps, recent launches, settings destinations and optional contacts.
+(JAVA / "MiMaxSpotlightUsage.java").write_text(r'''package com.benny.openlauncher.mimax;
+import android.content.Context;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import java.util.*;
+public final class MiMaxSpotlightUsage {
+ private MiMaxSpotlightUsage(){}
+ public static void record(Context c,Intent intent){
+  if(intent==null)return;String pkg=null;
+  try{ComponentName n=intent.getComponent();pkg=n!=null?n.getPackageName():intent.getPackage();}catch(Exception ignored){}
+  if(pkg==null||pkg.isEmpty()||pkg.equals(c.getPackageName()))return;
+  SharedPreferences p=c.getSharedPreferences("mimax_spotlight",0);
+  p.edit().putInt("count:"+pkg,p.getInt("count:"+pkg,0)+1).putLong("last:"+pkg,System.currentTimeMillis()).apply();
+ }
+ public static List<String> recent(Context c,int limit){
+  SharedPreferences p=c.getSharedPreferences("mimax_spotlight",0);
+  ArrayList<Map.Entry<String,Long>> entries=new ArrayList<>();
+  for(Map.Entry<String,?> e:p.getAll().entrySet())if(e.getKey().startsWith("last:")&&e.getValue() instanceof Long)
+   entries.add(new AbstractMap.SimpleEntry<>(e.getKey().substring(5),(Long)e.getValue()));
+  Collections.sort(entries,(a,b)->Long.compare(b.getValue(),a.getValue()));
+  ArrayList<String> result=new ArrayList<>();for(Map.Entry<String,Long> e:entries){if(result.size()>=limit)break;result.add(e.getKey());}
+  return result;
+ }
+}
+''')
+
+(JAVA / "MiMaxSpotlightButton.java").write_text(r'''package com.benny.openlauncher.mimax;
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
+import android.util.AttributeSet;
+import android.view.Gravity;
+import android.widget.FrameLayout;
+import android.widget.TextView;
+public final class MiMaxSpotlightButton extends FrameLayout {
+ public MiMaxSpotlightButton(Context c,AttributeSet a){super(c,a);
+  TextView label=new TextView(c);label.setText("⌕  Search");label.setTextColor(Color.WHITE);label.setTextSize(13);label.setGravity(Gravity.CENTER);label.setPadding(dp(12),dp(8),dp(12),dp(8));
+  GradientDrawable bg=new GradientDrawable();bg.setColor(0xee182230);bg.setCornerRadius(dp(22));bg.setStroke(dp(1),0x557eb5e8);label.setBackground(bg);label.setElevation(dp(12));addView(label,new FrameLayout.LayoutParams(-1,-1));
+  setOnClickListener(v->c.startActivity(new Intent(c,MiMaxSpotlightActivity.class)));
+ }
+ private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+}
+''')
+
+(JAVA / "MiMaxSpotlightActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+
+import android.Manifest;
+import android.app.Activity;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.database.Cursor;
+import android.graphics.drawable.Drawable;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.provider.ContactsContract;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.Gravity;
+import android.widget.*;
+import com.benny.openlauncher.activity.SettingsActivity;
+import com.benny.openlauncher.activity.HomeActivity;
+import com.benny.openlauncher.util.AppSettings;
+import java.util.*;
+
+public final class MiMaxSpotlightActivity extends Activity {
+ private static final int CONTACTS_PERMISSION=9411;
+ private LinearLayout results;
+ private EditText query;
+ private final ArrayList<ResolveInfo> apps=new ArrayList<>();
+ private final HashMap<String,ResolveInfo> byPackage=new HashMap<>();
+ private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+ @Override protected void onCreate(Bundle b){super.onCreate(b);
+  LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(16),dp(16),dp(16),dp(16));root.setBackgroundColor(0xff101722);
+  TextView title=new TextView(this);title.setText("Spotlight");title.setTextColor(-1);title.setTextSize(24);root.addView(title);
+  query=new EditText(this);query.setSingleLine(true);query.setHint("Search apps, contacts and settings");query.setTextColor(-1);query.setHintTextColor(0xff9aabba);root.addView(query);
+  Button contacts=new Button(this);contacts.setText("Enable contact search");root.addView(contacts);contacts.setOnClickListener(v->requestContacts());
+  ScrollView scroll=new ScrollView(this);results=new LinearLayout(this);results.setOrientation(1);scroll.addView(results);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+  Intent launch=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);PackageManager pm=getPackageManager();
+  @SuppressWarnings("deprecation") List<ResolveInfo> found=pm.queryIntentActivities(launch,0);
+  TreeMap<String,ResolveInfo> unique=new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+  for(ResolveInfo r:found)if(r.activityInfo!=null)unique.put(r.activityInfo.packageName,r);
+  apps.addAll(unique.values());for(ResolveInfo r:apps)byPackage.put(r.activityInfo.packageName,r);
+  query.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int count,int after){}public void onTextChanged(CharSequence s,int st,int before,int count){render(s.toString());}public void afterTextChanged(Editable e){}});
+  setContentView(root);render("");
+ }
+ private boolean hasContactsPermission(){return Build.VERSION.SDK_INT<23||checkSelfPermission(Manifest.permission.READ_CONTACTS)==PackageManager.PERMISSION_GRANTED;}
+ private void requestContacts(){if(Build.VERSION.SDK_INT>=23&&!hasContactsPermission())requestPermissions(new String[]{Manifest.permission.READ_CONTACTS},CONTACTS_PERMISSION);else render(query.getText().toString());}
+ @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] grants){super.onRequestPermissionsResult(request,permissions,grants);if(request==CONTACTS_PERMISSION)render(query.getText().toString());}
+ private boolean match(String text,String q){return text!=null&&text.toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT));}
+ private void render(String raw){
+  results.removeAllViews();String q=raw.trim();
+  Set<String> hidden=new HashSet<>(AppSettings.get().getHiddenAppsList());
+  if(q.isEmpty()){
+   section("Recent apps");
+   int shown=0;
+   for(String pkg:MiMaxSpotlightUsage.recent(this,8)){ResolveInfo r=byPackage.get(pkg);if(r!=null&&!hidden.contains(pkg)){appRow(r,"Recently used");shown++;}}
+   if(shown==0)textRow("No recent apps yet","Apps you launch from the home screen appear here");
+  }
+  section("Apps");
+  int count=0;
+  for(ResolveInfo r:apps){String pkg=r.activityInfo.packageName,name=r.loadLabel(getPackageManager()).toString();if(hidden.contains(pkg))continue;
+   if(!q.isEmpty()&&(match(name,q)||match(pkg,q))){appRow(r,pkg);count++;if(count>=30)break;}
+  }
+  if(!q.isEmpty()&&count==0)textRow("No matching apps","");
+  if(hasContactsPermission()&&!q.isEmpty())renderContacts(q);
+  else if(!q.isEmpty()){Button contact=new Button(this);contact.setText("Search contacts (requires permission)");results.addView(contact);contact.setOnClickListener(v->requestContacts());}
+  renderSettings(q);
+ }
+ private void section(String name){TextView h=new TextView(this);h.setText(name);h.setTextColor(0xffb8d9ff);h.setTextSize(16);h.setPadding(0,dp(12),0,dp(5));results.addView(h);}
+ private void textRow(String name,String sub){TextView t=new TextView(this);t.setText(sub.isEmpty()?name:name+"\n"+sub);t.setTextColor(0xffc8d4e0);t.setPadding(dp(8),dp(8),dp(8),dp(8));results.addView(t);}
+ private void appRow(ResolveInfo r,String sub){
+  LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(8),dp(7),dp(8),dp(7));row.setBackgroundColor(0xff202b39);
+  LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(4);results.addView(row,lp);
+  ImageView icon=new ImageView(this);icon.setImageDrawable(r.loadIcon(getPackageManager()));row.addView(icon,new LinearLayout.LayoutParams(dp(38),dp(38)));
+  TextView title=new TextView(this);title.setText(r.loadLabel(getPackageManager())+"\n"+sub);title.setTextColor(-1);title.setPadding(dp(10),0,0,0);row.addView(title);
+  row.setOnClickListener(v->{String pkg=r.activityInfo.packageName;MiMaxSpotlightUsage.record(this,new Intent().setComponent(new ComponentName(pkg,r.activityInfo.name)));try{Intent i=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setComponent(new ComponentName(pkg,r.activityInfo.name));startActivity(i);}catch(Exception ignored){}});
+ }
+ private void renderContacts(String q){
+  Cursor cursor=null;int added=0;
+  try{
+   cursor=getContentResolver().query(ContactsContract.Contacts.CONTENT_URI,
+    new String[]{ContactsContract.Contacts._ID,ContactsContract.Contacts.DISPLAY_NAME},
+    ContactsContract.Contacts.DISPLAY_NAME+" LIKE ?",new String[]{"%"+q+"%"},ContactsContract.Contacts.DISPLAY_NAME+" ASC");
+   if(cursor==null||!cursor.moveToFirst())return;
+   section("Contacts");
+   do{
+    String id=cursor.getString(0),name=cursor.getString(1);
+    TextView row=new TextView(this);row.setText("●  "+name);row.setTextColor(-1);row.setTextSize(15);row.setPadding(dp(10),dp(10),dp(10),dp(10));results.addView(row);
+    row.setOnClickListener(v->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.withAppendedPath(ContactsContract.Contacts.CONTENT_URI,id)));}catch(Exception ignored){}});
+    if(++added>=20)break;
+   }while(cursor.moveToNext());
+  }catch(SecurityException ignored){}finally{if(cursor!=null)cursor.close();}
+ }
+ private void renderSettings(String q){
+  String[][] entries={
+   {"Launcher settings","settings"},{"App Library","library"},{"Focus Mode","focus"},
+   {"Me Island","island"},{"Privacy and app lock","privacy"},{"Profiles","profiles"},
+   {"Smart Widget Stack","widgets"},{"Mi_Max AI Assistant","ai"},{"Theme schedule","schedule"},
+   {"Extension Manager","extensions"},{"App labels and icons","personalization"},{"Page wallpapers","wallpaper"}
+  };
+  ArrayList<String[]> matches=new ArrayList<>();
+  for(String[] e:entries)if(q.isEmpty()||match(e[0],q))matches.add(e);
+  if(matches.isEmpty())return;
+  section("Settings and tools");
+  for(String[] e:matches){TextView row=new TextView(this);row.setText("⚙  "+e[0]);row.setTextColor(-1);row.setTextSize(15);row.setPadding(dp(10),dp(10),dp(10),dp(10));results.addView(row);row.setOnClickListener(v->open(e[1]));}
+ }
+ private void open(String key){
+  Class<?> cls;
+  switch(key){
+   case "library":cls=MiMaxAppLibraryActivity.class;break;
+   case "focus":cls=MiMaxFocusModeActivity.class;break;
+   case "island":cls=MeIslandSettingsActivity.class;break;
+   case "privacy":cls=MiMaxPrivacySettingsActivity.class;break;
+   case "profiles":cls=MiMaxProfilesActivity.class;break;
+   case "widgets":cls=MiMaxSmartStackActivity.class;break;
+   case "ai":cls=MiMaxAiActivity.class;break;
+   case "schedule":cls=MiMaxThemeScheduleActivity.class;break;
+   case "extensions":cls=ExtensionManagerActivity.class;break;
+   case "personalization":cls=MiMaxPersonalizationActivity.class;break;
+   case "wallpaper":cls=MiMaxPageWallpaperActivity.class;break;
+   default:cls=SettingsActivity.class;
+  }
+  startActivity(new Intent(this,cls));
+ }
+}
+''')
+
+# Track launches from the upstream app and shortcut tiles to populate recent-app suggestions.
+itemView=Path("app/src/main/java/com/benny/openlauncher/widget/AppItemView.java")
+s=itemView.read_text()
+mark="App app = AppManager.getInstance(_view.getContext()).findApp(item._intent);"
+if "MiMaxSpotlightUsage.record" not in s:
+ if mark not in s: raise SystemExit("Could not find app launch callback for Spotlight tracking")
+ s=s.replace(mark,"com.benny.openlauncher.mimax.MiMaxSpotlightUsage.record(_view.getContext(), item.getIntent());\n                            "+mark,1)
+itemView.write_text(s)
+
+manifest=BASE / "AndroidManifest.xml"
+m=manifest.read_text()
+if "android.permission.READ_CONTACTS" not in m:m=m.replace('<application','<uses-permission android:name="android.permission.READ_CONTACTS" />\n    <application',1)
+if "com.benny.openlauncher.mimax.MiMaxSpotlightActivity" not in m:
+ m=m.replace("</application>",'''        <activity android:name="com.benny.openlauncher.mimax.MiMaxSpotlightActivity" android:exported="false" android:label="Spotlight" />
+    </application>''',1)
+manifest.write_text(m)
+
+layout=BASE / "res/layout/activity_home.xml"
+xml=layout.read_text()
+if "MiMaxSpotlightButton" not in xml:
+ xml=xml.replace("</FrameLayout>",'''    <com.benny.openlauncher.mimax.MiMaxSpotlightButton
+        android:id="@+id/mimax_spotlight_button"
+        android:layout_width="104dp"
+        android:layout_height="46dp"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="10dp" />
+</FrameLayout>''',1)
+layout.write_text(xml)
+
+master=BASE / "res/xml/preferences_master.xml"
+p=master.read_text()
+if "mimax_spotlight" not in p:
+ entry='''    <PreferenceCategory android:title="Mi_Max Search">
+        <Preference android:key="mimax_spotlight" android:title="Spotlight Search"
+            android:summary="Search apps, recent launches, settings and optional contacts">
+            <intent android:targetPackage="com.mimax.launcher" android:targetClass="com.benny.openlauncher.mimax.MiMaxSpotlightActivity" />
+        </Preference>
+    </PreferenceCategory>
+'''
+ p=p.replace("</PreferenceScreen>",entry+"</PreferenceScreen>",1)
+master.write_text(p)
+
+backup=Path("app/src/main/java/com/benny/openlauncher/util/BackupHelper.java")
+s=backup.read_text()
+s=s.replace('"mimax_ai.xml"\n    };','"mimax_ai.xml",\n        "mimax_spotlight.xml"\n    };')
+backup.write_text(s)
+
+print("Added home-screen Spotlight button with app search, recent app history, launcher settings tools and permission-gated contacts search.")

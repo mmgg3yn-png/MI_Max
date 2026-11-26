@@ -1,0 +1,16 @@
+{
+  "format": "mimax-island-theme",
+  "id": "hyper_wide",
+  "name": "Hyper Wide",
+  "style": "his",
+  "layout": "wide_card",
+  "animation": "morph",
+  "background": 3994021149,
+  "accent": 4290316799,
+  "blur": 28,
+  "cornerDp": 24,
+  "widthDp": 244,
+  "compactHeightDp": 44,
+  "expandedHeightDp": 140,
+  "animationMs": 320
+}

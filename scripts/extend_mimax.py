@@ -131,11 +131,12 @@ public final class MeIslandThemeManager {
         if(!t.id.matches("[A-Za-z0-9_.-]{1,48}") || t.name.trim().isEmpty()) throw new IllegalArgumentException("Invalid theme identity");
         save(t); select(t.id); return t;
     }
-    public Theme installJson(String json) throws Exception {
+    public Theme installJson(String json) throws Exception { return installJson(json,true); }
+    public Theme installJson(String json, boolean activate) throws Exception {
         Theme t=parse(new JSONObject(json));
         if(!t.id.matches("[A-Za-z0-9_.-]{1,48}") || t.name.trim().isEmpty()) throw new IllegalArgumentException("Invalid theme identity");
         save(t);
-        select(t.id);
+        if(activate)select(t.id);
         return t;
     }
     public boolean isBuiltIn(String id) {
@@ -612,6 +613,9 @@ import java.util.*;
 public final class MeIslandStoreActivity extends Activity {
  private MeIslandThemeManager manager;
  private LinearLayout list;
+ private TextView storeStatus;
+ private final java.util.concurrent.ExecutorService worker=java.util.concurrent.Executors.newSingleThreadExecutor();
+ private static final String CATALOG_URL="https://raw.githubusercontent.com/mmgg3yn-png/MI_Max/openlauncher-foundation/extensions/store/catalog.json";
  private static final String[][] PACKS={
   {"oneplus_split","OnePlus Split","OnePlus-inspired split activity card with spring geometry","custom","split","spring","4010806080","4293529600","34","20","224","40","124","360"},
   {"hyper_wide","Hyper Wide","Wide HyperIsland-style activity card","his","wide_card","morph","3994021149","4290316799","28","24","244","44","140","320"},
@@ -624,8 +628,47 @@ public final class MeIslandStoreActivity extends Activity {
   TextView title=new TextView(this);title.setText("Me Island Theme Store");title.setTextColor(-1);title.setTextSize(24);list.addView(title);
   TextView note=new TextView(this);note.setText("Install declarative theme packs independently of the launcher APK. Each pack changes actual card geometry, layout and motion.");note.setTextColor(0xffc5d1df);note.setPadding(0,dp(8),0,dp(14));list.addView(note);
   Button importPack=new Button(this);importPack.setText("Import .mt1 from storage");importPack.setOnClickListener(v->startActivity(new android.content.Intent(this,MeIslandSettingsActivity.class)));list.addView(importPack);
+  Button online=new Button(this);online.setText("Check online catalogue and updates");list.addView(online);online.setOnClickListener(v->loadOnlineCatalog());
+  storeStatus=new TextView(this);storeStatus.setTextColor(0xffb8d9ff);storeStatus.setPadding(0,dp(6),0,dp(12));list.addView(storeStatus);
   for(String[] pack:PACKS)addPack(pack);
   setContentView(scroll);
+ }
+ private void loadOnlineCatalog(){
+  storeStatus.setText("Checking secure Mi_Max theme catalogue…");
+  worker.execute(()->{
+   try{
+    String raw=readUrl(CATALOG_URL,65536);
+    org.json.JSONObject root=new org.json.JSONObject(raw);
+    org.json.JSONArray themes=root.optJSONArray("themes");
+    if(themes==null)throw new java.io.IOException("Catalogue has no themes array");
+    int installed=0;
+    for(int n=0;n<themes.length();n++){
+     org.json.JSONObject item=themes.getJSONObject(n);
+     String name=item.optString("name","Theme"),url=item.optString("url",""),expected=item.optString("sha256","").toLowerCase(java.util.Locale.ROOT);
+     if(!url.startsWith("https://raw.githubusercontent.com/mmgg3yn-png/MI_Max/")||expected.length()!=64)continue;
+     String manifest=readUrl(url,131072);
+     String actual=sha256(manifest.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+     if(!actual.equals(expected))throw new SecurityException("Integrity check failed for "+name);
+     manager.installJson(manifest,false);
+     installed++;
+    }
+    final int count=installed;
+    runOnUiThread(()->storeStatus.setText("Catalogue v"+root.optInt("version",1)+": installed/updated "+count+" packs. Select one from the local list to activate it."));
+   }catch(Exception e){runOnUiThread(()->storeStatus.setText("Catalogue update failed: "+e.getMessage()));}
+  });
+ }
+ private String readUrl(String address,int limit)throws Exception{
+  java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(address).openConnection();
+  c.setConnectTimeout(12000);c.setReadTimeout(18000);c.setRequestProperty("Accept","application/json");
+  int code=c.getResponseCode();if(code<200||code>=300){c.disconnect();throw new java.io.IOException("HTTP "+code);}
+  try(java.io.InputStream in=c.getInputStream();java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){
+   byte[] b=new byte[4096];int n,total=0;while((n=in.read(b))!=-1){total+=n;if(total>limit)throw new java.io.IOException("Remote theme file is too large");out.write(b,0,n);}
+   return out.toString("UTF-8");
+  }finally{c.disconnect();}
+ }
+ private String sha256(byte[] data)throws Exception{
+  byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(data);
+  StringBuilder out=new StringBuilder();for(byte b:digest)out.append(String.format(java.util.Locale.ROOT,"%02x",b&255));return out.toString();
  }
  private void addPack(String[] p){
   LinearLayout card=new LinearLayout(this);card.setOrientation(1);card.setPadding(dp(12),dp(12),dp(12),dp(12));card.setBackgroundColor(0xff202b39);
@@ -647,6 +690,7 @@ public final class MeIslandStoreActivity extends Activity {
   Button remove=new Button(this);remove.setText("Remove installed pack");remove.setEnabled(installed);card.addView(remove);
   remove.setOnClickListener(v->{if(manager.remove(p[0])){Toast.makeText(this,"Pack removed",Toast.LENGTH_SHORT).show();remove.setEnabled(false);}else Toast.makeText(this,"Cannot remove a built-in engine",Toast.LENGTH_SHORT).show();});
  }
+ @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
 }
 ''')
 

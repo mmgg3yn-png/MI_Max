@@ -1,45 +1,47 @@
-# Mi_Max Launcher extension contract
+# Mi_Max Launcher extension packages
 
-Extensions are separate Android APKs. They can be installed and updated independently of the launcher APK.
+The current OpenLauncher build supports two safe, declarative package types. Neither type runs downloaded code inside the launcher.
 
-## Required activity contract
+## Me Island theme packs (.mt1)
 
-Declare one exported Activity with:
-
-- Intent action: `com.mimax.lu.action.EXTENSION_TOOL`
-- Category: `android.intent.category.DEFAULT`
-- Activity metadata `com.mimax.lu.extension` set to `true`
-- Optional activity metadata `com.mimax.lu.minLauncherVersion` (integer; current host contract version is 1)
-- Optional activity metadata `com.mimax.lu.requiredPackages` (comma-separated Android package names that must be installed)
+A theme pack is a JSON manifest that changes the actual Me Island presentation: engine, layout geometry, animation, dimensions, blur, corner radius, colours and activity-card layout.
 
 Example:
 
-```xml
-<activity
-    android:name=".ExtensionToolActivity"
-    android:exported="true">
-    <intent-filter>
-        <action android:name="com.mimax.lu.action.EXTENSION_TOOL" />
-        <category android:name="android.intent.category.DEFAULT" />
-    </intent-filter>
-    <meta-data
-        android:name="com.mimax.lu.extension"
-        android:value="true" />
-    <meta-data
-        android:name="com.mimax.lu.minLauncherVersion"
-        android:value="1" />
-</activity>
-```
+    {
+      "format": "mimax-island-theme",
+      "id": "oneplus_split",
+      "name": "OnePlus Split",
+      "style": "custom",
+      "layout": "split",
+      "animation": "spring",
+      "background": 4010806080,
+      "accent": 4293529600,
+      "blur": 34,
+      "cornerDp": 20,
+      "widthDp": 224,
+      "compactHeightDp": 40,
+      "expandedHeightDp": 124,
+      "animationMs": 360
+    }
 
-## Expected behaviour
+Supported engine IDs are ltin, his, coloros and custom. Supported layouts are pill, wide_card, split and fluid. Supported animations are spring, morph and fade_slide.
 
-- Give the extension its own package name and version.
-- Keep the tool UI inside the extension Activity.
-- Request only Android permissions the tool truly needs. Android owns the permission prompt and the user can manage them in App info.
-- Handle missing permissions and unsupported devices without crashing.
-- The launcher discovers the extension through the activity intent filter, lets the user enable/disable it, and opens it on demand.
-- Updating the extension means installing a newer APK with the same package name and signing key. The launcher APK does not need to be rebuilt.
+Import/export is available from Settings → Mi_Max Me Island. The local theme store includes built-in packs and can refresh the online catalogue at extensions/store/catalog.json. The catalogue lists HTTPS raw-content URLs and SHA-256 digests; the launcher checks the digest before installing or updating a theme. Updates are stored in app-private preferences and do not require a new launcher APK. The theme manager preserves a previous version for rollback.
 
-## Current limits
+## Declarative launcher extension archives (.zip)
 
-This contract launches independent extension APK activities. It does not grant extensions permission to modify launcher internals, replace SystemUI, or execute arbitrary code inside the launcher process. The host checks the minimum launcher contract version and optional required package names. The current recovery action disables registered extensions; automatic package rollback and a remote extension marketplace are not implemented.
+A ZIP archive contains a root manifest.json and optional static assets. The manifest fields are:
+
+- id: 3–80 characters using letters, numbers, underscore, dot or hyphen.
+- name and version: display name and version.
+- minApi: minimum Android API level.
+- permissions: a list of declared capability names for host-side review.
+
+The installer checks archive paths, limits archives to 128 entries and 4 MB uncompressed, checks the manifest and minimum API, and preserves the last-known-good package during replacement. Packages are data/assets only; they cannot run Java, native code or arbitrary scripts in the launcher process.
+
+Open Settings → Mi_Max Extensions to import, inspect or roll back packages. The separate Mi_Max Recovery activity can clear broken visual packs or extension storage without opening the normal launcher workspace.
+
+## Security and platform boundaries
+
+Downloaded manifests are untrusted input and are parsed with strict size and field validation. SHA-256 detects catalogue/file mismatches; HTTPS protects transport. A theme pack can only select the documented visual properties. It cannot replace Android SystemUI, the lock screen, Recents, notification shade, or other applications.

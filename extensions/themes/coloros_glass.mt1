@@ -1,0 +1,16 @@
+{
+  "format": "mimax-island-theme",
+  "id": "coloros_glass",
+  "name": "ColorOS Glass",
+  "style": "coloros",
+  "layout": "fluid",
+  "animation": "morph",
+  "background": 3425055540,
+  "accent": 4290638847,
+  "blur": 44,
+  "cornerDp": 30,
+  "widthDp": 210,
+  "compactHeightDp": 44,
+  "expandedHeightDp": 132,
+  "animationMs": 420
+}

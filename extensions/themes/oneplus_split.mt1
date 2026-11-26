@@ -1,0 +1,16 @@
+{
+  "format": "mimax-island-theme",
+  "id": "oneplus_split",
+  "name": "OnePlus Split",
+  "style": "custom",
+  "layout": "split",
+  "animation": "spring",
+  "background": 4010806080,
+  "accent": 4293529600,
+  "blur": 34,
+  "cornerDp": 20,
+  "widthDp": 224,
+  "compactHeightDp": 40,
+  "expandedHeightDp": 124,
+  "animationMs": 360
+}

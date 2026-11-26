@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "themes": [
+    {
+      "id": "oneplus_split",
+      "name": "OnePlus Split",
+      "url": "https://raw.githubusercontent.com/mmgg3yn-png/MI_Max/openlauncher-foundation/extensions/themes/oneplus_split.mt1",
+      "sha256": "5dfce6710a20b53e2e88c0b1f061e9c918fab3845f85ed4e77a8486366763ddd"
+    },
+    {
+      "id": "hyper_wide",
+      "name": "Hyper Wide",
+      "url": "https://raw.githubusercontent.com/mmgg3yn-png/MI_Max/openlauncher-foundation/extensions/themes/hyper_wide.mt1",
+      "sha256": "ded751084eca0fff813970b204ce9abb92938c24ed517265eb98b87a88af3e14"
+    },
+    {
+      "id": "coloros_glass",
+      "name": "ColorOS Glass",
+      "url": "https://raw.githubusercontent.com/mmgg3yn-png/MI_Max/openlauncher-foundation/extensions/themes/coloros_glass.mt1",
+      "sha256": "2e624c4849f0a664dbebc8572f1aba79b569f2b0b2f242ee9bc22a45b197347e"
+    },
+    {
+      "id": "ltin_compact",
+      "name": "LTIN Compact",
+      "url": "https://raw.githubusercontent.com/mmgg3yn-png/MI_Max/openlauncher-foundation/extensions/themes/ltin_compact.mt1",
+      "sha256": "6f0f60c06a755b3819a9ce084da0f3ec83deab4f599b05f92f0018b79588a74e"
+    }
+  ]
+}
