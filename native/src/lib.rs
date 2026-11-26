@@ -3,7 +3,7 @@ use jni::sys::jstring;
 use jni::JNIEnv;
 
 #[no_mangle]
-pub extern "system" fn Java_com_mimax_lu_NativeBridge_engineVersion(
+pub extern "system" fn Java_com_mimax_lu_NativeBridge_nativeEngineVersion(
     mut env: JNIEnv,
     _class: JClass,
 ) -> jstring {
