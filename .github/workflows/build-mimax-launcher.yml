@@ -2,6 +2,9 @@ name: Build Mi_Max Launcher from OpenLauncher (ARM32 + ARM64)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - openlauncher-foundation
 
 concurrency:
   group: mimax-openlauncher-${{ github.ref }}
@@ -47,9 +50,13 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Apply Mi_Max features to OpenLauncher source
+      - name: Validate and apply Mi_Max integration
         working-directory: launcher-src
-        run: python3 ../project/scripts/brand_openlauncher.py
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ../project/scripts/brand_openlauncher.py
+          python3 ../project/scripts/brand_openlauncher.py
 
       - name: Build Mi_Max launcher
         working-directory: launcher-src
@@ -62,6 +69,15 @@ jobs:
           APK="$(find launcher-src/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
           test -n "$APK"
           unzip -t "$APK"
+          BADGING="$("$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK")"
+          grep -q "package: name='com.mimax.launcher'" <<< "$BADGING"
+          # This upstream launcher is Java-only. If native libraries are added later,
+          # require both ARM ABIs rather than trusting Gradle abiFilters alone.
+          NATIVE_ABIS="$(unzip -Z1 "$APK" | awk -F/ '$1=="lib" && NF>=3 {print $2}' | sort -u | tr '\n' ' ')"
+          if [[ -n "$NATIVE_ABIS" ]]; then
+            grep -qw 'armeabi-v7a' <<< "$NATIVE_ABIS"
+            grep -qw 'arm64-v8a' <<< "$NATIVE_ABIS"
+          fi
           mkdir -p dist
           cp "$APK" dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
           sha256sum dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
