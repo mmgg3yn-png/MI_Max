@@ -99,5 +99,7 @@ class ExtensionPackageManager(private val context: Context) {
         registry.recordFailure(extension.packageName, it.message ?: it.javaClass.simpleName)
     }
 
+    fun errorLog(packageName: String): List<String> = registry.errorLog(packageName)
+
     fun registryEntries() = registry.all()
 }
