@@ -331,49 +331,63 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
 @Composable private fun WidgetsPage(controller: LauncherWidgetController) {
     val ctx = LocalContext.current
     val prefs = remember { ctx.getSharedPreferences("widget_host_v1", 0) }
+    val activeIds = remember {
+        mutableStateListOf<Int>().apply {
+            addAll(prefs.getStringSet("active_widget_ids", emptySet())!!.mapNotNull { it.toIntOrNull() })
+        }
+    }
     var providers by remember { mutableStateOf(controller.installedProviders()) }
-    var activeId by remember { mutableIntStateOf(prefs.getInt("active_widget_id", -1)) }
     var pendingId by remember { mutableIntStateOf(-1) }
+    fun persistIds() {
+        prefs.edit().putStringSet("active_widget_ids", activeIds.map { it.toString() }.toSet()).apply()
+    }
     val bindLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == android.app.Activity.RESULT_OK && pendingId >= 0) {
-            activeId = pendingId
-            prefs.edit().putInt("active_widget_id", pendingId).apply()
+            if (!activeIds.contains(pendingId)) activeIds.add(pendingId)
+            persistIds()
         } else if (pendingId >= 0) {
             controller.deleteWidget(pendingId)
         }
         pendingId = -1
     }
     Column(Modifier.fillMaxSize()) {
-        Text("Android Widgets", color=Color.White, fontSize=24.sp, fontWeight=FontWeight.Bold)
-        Text("Choose an installed widget provider and add it to the widget area.", color=Color.White.copy(.65f), fontSize=12.sp)
-        Spacer(Modifier.height(12.dp))
-        if (activeId >= 0) {
-            val hostView = remember(activeId) { controller.createView(activeId) }
-            if (hostView != null) {
-                AndroidView(factory={ hostView }, modifier=Modifier.fillMaxWidth().heightIn(min=110.dp, max=300.dp))
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick={
-                    controller.deleteWidget(activeId)
-                    prefs.edit().remove("active_widget_id").apply()
-                    activeId = -1
-                }) { Text("Remove widget") }
-            } else {
-                Text("Saved widget is unavailable. Select another provider.", color=Color.White.copy(.7f))
-                activeId = -1
-            }
+        Text("Stacked Android Widgets", color=Color.White, fontSize=24.sp, fontWeight=FontWeight.Bold)
+        Text("Add multiple real Android widgets and keep them together in this scrollable stack.", color=Color.White.copy(.65f), fontSize=12.sp)
+        Spacer(Modifier.height(9.dp))
+        if (activeIds.isEmpty()) {
+            Text("No widgets added yet.", color=Color.White.copy(.7f))
         } else {
-            Text("No widget added yet", color=Color.White.copy(.7f))
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier=Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement=Arrangement.spacedBy(9.dp),
+                contentPadding=PaddingValues(vertical=5.dp)
+            ) {
+                items(activeIds.toList(), key={it}) { widgetId ->
+                    val hostView = remember(widgetId) { controller.createView(widgetId) }
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(Color.White.copy(.09f)).padding(8.dp)) {
+                        if (hostView != null) {
+                            AndroidView(factory={ hostView }, modifier=Modifier.fillMaxWidth().heightIn(min=90.dp, max=330.dp))
+                        } else {
+                            Text("Widget $widgetId is unavailable.", color=Color.White.copy(.7f))
+                        }
+                        OutlinedButton(onClick={
+                            controller.deleteWidget(widgetId)
+                            activeIds.remove(widgetId)
+                            persistIds()
+                        }, modifier=Modifier.align(Alignment.End)) { Text("Remove") }
+                    }
+                }
+            }
         }
-        Spacer(Modifier.height(12.dp))
-        Text("Available providers", color=Color.White, fontWeight=FontWeight.SemiBold)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(7.dp))
+        Text("Available widget providers", color=Color.White, fontWeight=FontWeight.SemiBold)
         androidx.compose.foundation.lazy.LazyColumn(
             modifier=Modifier.weight(1f),
-            verticalArrangement=Arrangement.spacedBy(7.dp)
+            verticalArrangement=Arrangement.spacedBy(6.dp)
         ) {
             items(providers, key={ it.provider.flattenToString() }) { info ->
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(glass).padding(12.dp),
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(glass).padding(10.dp),
                     verticalAlignment=Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -385,17 +399,15 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                         pendingId = id
                         val intent = controller.bindIntent(id, info.provider)
                         if (intent == null) {
-                            activeId = id
-                            prefs.edit().putInt("active_widget_id", id).apply()
+                            activeIds.add(id)
+                            persistIds()
                             pendingId = -1
                         } else bindLauncher.launch(intent)
                     }) { Text("Add") }
                 }
             }
         }
-        if (providers.isEmpty()) {
-            Text("No widget providers were found on this device.", color=Color.White.copy(.65f))
-        }
+        if (providers.isEmpty()) Text("No widget providers were found on this device.", color=Color.White.copy(.65f))
         OutlinedButton(onClick={ providers = controller.installedProviders() }, modifier=Modifier.fillMaxWidth()) {
             Text("Refresh providers")
         }
