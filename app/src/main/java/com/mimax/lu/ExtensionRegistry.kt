@@ -39,8 +39,19 @@ class ExtensionRegistry(context: Context) {
     fun setEnabled(id: String, enabled: Boolean) =
         persist(all().map { if (it.id == id) it.copy(enabled = enabled, lastError = null) else it })
 
-    fun recordFailure(id: String, error: String) =
+    fun recordFailure(id: String, error: String) {
+        val key = "errors_$id"
+        val log = runCatching { JSONArray(prefs.getString(key, "[]")) }.getOrDefault(JSONArray())
+        log.put("${System.currentTimeMillis()}: ${error.take(1200)}")
+        while (log.length() > 20) log.remove(0)
+        prefs.edit().putString(key, log.toString()).apply()
         persist(all().map { if (it.id == id) it.copy(enabled = false, lastError = error.take(1200)) else it })
+    }
+
+    fun errorLog(id: String): List<String> = runCatching {
+        val log = JSONArray(prefs.getString("errors_$id", "[]"))
+        (0 until log.length()).map { log.optString(it) }
+    }.getOrDefault(emptyList())
 
     fun compatible(extension: Extension, launcherVersion: Int = 1): Boolean =
         extension.version > 0 && extension.minLauncherVersion <= launcherVersion
