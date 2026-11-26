@@ -46,6 +46,8 @@ class MeIslandSettingsActivity : ComponentActivity() {
                 var selected by remember { mutableStateOf(manager.selectedId()) }
                 var themes by remember { mutableStateOf(manager.all()) }
                 var blurEnabled by remember { mutableStateOf(manager.blurEnabled()) }
+                val islandPrefs = remember { getSharedPreferences("me_island_v1", MODE_PRIVATE) }
+                var hideNotificationContent by remember { mutableStateOf(islandPrefs.getBoolean("hide_notification_content", false)) }
                 var seconds by remember { mutableIntStateOf(600) }
                 var status by remember { mutableStateOf("Choose a design, then start a timer to preview Me Island over other apps.") }
 
@@ -118,6 +120,17 @@ class MeIslandSettingsActivity : ComponentActivity() {
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Enable notification access") }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Privacy mode")
+                            Text("Hide notification text inside Me Island", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(checked = hideNotificationContent, onCheckedChange = {
+                            hideNotificationContent = it
+                            islandPrefs.edit().putBoolean("hide_notification_content", it).apply()
+                        })
+                    }
 
                     Text("Glass / Blur", style = MaterialTheme.typography.titleMedium)
                     Row(verticalAlignment = Alignment.CenterVertically) {
