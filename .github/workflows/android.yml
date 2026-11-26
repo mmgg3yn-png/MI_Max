@@ -31,8 +31,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install NDK
-        run: sdkmanager "ndk;27.2.12479018"
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
