@@ -8,7 +8,6 @@ import android.os.Bundle
 import android.graphics.BitmapFactory
 import java.io.File
 import java.io.FileOutputStream
-import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
