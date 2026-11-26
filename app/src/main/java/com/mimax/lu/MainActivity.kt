@@ -156,7 +156,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 Spacer(Modifier.height(15.dp))
                 AnimatedContent(targetState=tab,transitionSpec={ androidx.compose.animation.fadeIn(tween(animationDuration)) togetherWith androidx.compose.animation.fadeOut(tween((animationDuration/2).coerceAtLeast(60))) },label="pages") { page ->
                     when(page) {
-                        "apps" -> AppsPage(filtered,query,iconShape,{query=it})
+                        "apps" -> AppsPage(filtered,query,iconShape,columns,{query=it})
                         "ai" -> AiChatPage(endpoint,model,apiKey)
                         "widgets" -> WidgetsPage(widgetController)
                         "extensions" -> ExtensionsPage()
@@ -376,13 +376,13 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         )
     }
 }
-@Composable private fun AppsPage(apps:List<AppEntry>,query:String,iconShape:String,onQuery:(String)->Unit) {
+@Composable private fun AppsPage(apps:List<AppEntry>,query:String,iconShape:String,cols:Int,onQuery:(String)->Unit) {
     Column {
         Text("App Library",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
         GlassInput(query,onQuery,"Search installed apps")
         Spacer(Modifier.height(10.dp))
-        LazyVerticalGrid(columns=GridCells.Fixed(4),modifier=Modifier.weight(1f),contentPadding=PaddingValues(bottom=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) { items(apps,key={it.pkg}){AppIcon(it,iconShape=iconShape)} }
+        LazyVerticalGrid(columns=GridCells.Fixed(cols),modifier=Modifier.weight(1f),contentPadding=PaddingValues(bottom=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) { items(apps,key={it.pkg}){AppIcon(it,iconShape=iconShape)} }
     }
 }
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
