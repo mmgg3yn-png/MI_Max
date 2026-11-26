@@ -58,6 +58,27 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
+private fun launcherTypography(fontFamily: FontFamily): Typography {
+    val base = Typography()
+    return Typography(
+        displayLarge = base.displayLarge.copy(fontFamily = fontFamily),
+        displayMedium = base.displayMedium.copy(fontFamily = fontFamily),
+        displaySmall = base.displaySmall.copy(fontFamily = fontFamily),
+        headlineLarge = base.headlineLarge.copy(fontFamily = fontFamily),
+        headlineMedium = base.headlineMedium.copy(fontFamily = fontFamily),
+        headlineSmall = base.headlineSmall.copy(fontFamily = fontFamily),
+        titleLarge = base.titleLarge.copy(fontFamily = fontFamily),
+        titleMedium = base.titleMedium.copy(fontFamily = fontFamily),
+        titleSmall = base.titleSmall.copy(fontFamily = fontFamily),
+        bodyLarge = base.bodyLarge.copy(fontFamily = fontFamily),
+        bodyMedium = base.bodyMedium.copy(fontFamily = fontFamily),
+        bodySmall = base.bodySmall.copy(fontFamily = fontFamily),
+        labelLarge = base.labelLarge.copy(fontFamily = fontFamily),
+        labelMedium = base.labelMedium.copy(fontFamily = fontFamily),
+        labelSmall = base.labelSmall.copy(fontFamily = fontFamily)
+    )
+}
+
 private val glass = Color.White.copy(alpha = .13f)
 private data class AppEntry(val name:String,val pkg:String,val icon:android.graphics.drawable.Drawable)
 
@@ -140,7 +161,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     fun save(k:String,v:Any) { prefs.edit().apply {
         when(v){ is Float->putFloat(k,v); is Int->putInt(k,v); is String->putString(k,v) }
     }.apply() }
-    MaterialTheme(colorScheme=darkColorScheme(primary=customTheme?.let { Color(it.accent) } ?: Color(0xFFB9D9FF),surface=Color(0xFF202B3A),background=Color(0xFF0B111B)), typography=Typography(fontFamily=customFont ?: FontFamily.Default)) {
+    MaterialTheme(colorScheme=darkColorScheme(primary=customTheme?.let { Color(it.accent) } ?: Color(0xFFB9D9FF),surface=Color(0xFF202B3A),background=Color(0xFF0B111B)), typography=launcherTypography(customFont ?: FontFamily.Default)) {
         Box(Modifier.fillMaxSize()) {
             if (wallpaperBitmap != null) {
                 Image(bitmap=wallpaperBitmap,contentDescription=null,modifier=Modifier.fillMaxSize().blur(blur.dp),contentScale=ContentScale.Crop)
