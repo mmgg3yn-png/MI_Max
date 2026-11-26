@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - ".github/workflows/build-mimax-launcher.yml"
+      - "scripts/**"
   workflow_dispatch:
 
 permissions:
