@@ -55,9 +55,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile ../project/scripts/brand_openlauncher.py ../project/scripts/extend_mimax.py
+          python3 -m py_compile ../project/scripts/brand_openlauncher.py ../project/scripts/extend_mimax.py ../project/scripts/extend_launcher.py
           python3 ../project/scripts/brand_openlauncher.py
           python3 ../project/scripts/extend_mimax.py
+          python3 ../project/scripts/extend_launcher.py
 
       - name: Build Mi_Max launcher
         working-directory: launcher-src
