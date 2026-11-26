@@ -356,3 +356,80 @@ if old in s:
     context_utils.write_text(s.replace(old, new, 1))
 
 print("Mi_Max identity + ARM32/ARM64 + developer page + functional permission-gated Me Island timer overlay applied.")
+
+
+// Mi_Max extension packages: declarative-only, path-safe install, compatibility checks,
+// per-extension error logs, and last-known-good rollback. No extension bytecode is executed.
+extensions = Path("app/src/main/java/com/benny/openlauncher/mimax/extensions")
+extensions.mkdir(parents=True, exist_ok=True)
+(extensions / "ExtensionRegistry.java").write_text(r'''package com.benny.openlauncher.mimax.extensions;
+
+import android.content.Context;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.io.*;
+import java.util.*;
+import java.util.zip.*;
+
+public final class ExtensionRegistry {
+    private final File root;
+    public ExtensionRegistry(Context context) {
+        root = new File(context.getFilesDir(), "mimax-extensions");
+        if (!root.exists()) root.mkdirs();
+    }
+    public static final class Entry {
+        public final String id, name, version;
+        public final int minApi;
+        public final List<String> permissions;
+        Entry(JSONObject j) throws Exception {
+            id=j.getString("id"); name=j.getString("name"); version=j.getString("version");
+            minApi=j.optInt("minApi",21); permissions=new ArrayList<>();
+            JSONArray a=j.optJSONArray("permissions");
+            if(a!=null) for(int i=0;i<a.length();i++) permissions.add(a.getString(i));
+            if(!id.matches("[A-Za-z0-9_.-]{3,80}")) throw new SecurityException("Invalid extension id");
+        }
+    }
+    public Entry install(InputStream archive, int sdk) throws Exception {
+        File stage=new File(root,".staging-"+UUID.randomUUID()); stage.mkdirs();
+        try(ZipInputStream zin=new ZipInputStream(archive)) {
+            ZipEntry e; byte[] b=new byte[8192];
+            while((e=zin.getNextEntry())!=null) {
+                String n=e.getName();
+                if(n.startsWith("/") || n.contains("..") || n.contains("\\\\")) throw new SecurityException("Unsafe archive path");
+                File out=new File(stage,n);
+                if(!out.getCanonicalPath().startsWith(stage.getCanonicalPath()+File.separator)) throw new SecurityException("Path traversal");
+                if(e.isDirectory()) out.mkdirs(); else {
+                    out.getParentFile().mkdirs();
+                    try(FileOutputStream os=new FileOutputStream(out)){int k;while((k=zin.read(b))>0)os.write(b,0,k);}
+                }
+            }
+        }
+        File mf=new File(stage,"manifest.json");
+        if(!mf.isFile() || mf.length()>65536) throw new IOException("Missing or oversized manifest.json");
+        byte[] bytes=new byte[(int)mf.length()];
+        try(FileInputStream in=new FileInputStream(mf)){int n=in.read(bytes);if(n!=bytes.length)throw new IOException("Incomplete manifest");}
+        Entry entry=new Entry(new JSONObject(new String(bytes,"UTF-8")));
+        if(sdk<entry.minApi) throw new IllegalArgumentException("Android API is too old");
+        File live=new File(root,entry.id), backup=new File(root,entry.id+".last-good");
+        delete(backup);
+        if(live.exists() && !live.renameTo(backup)) throw new IOException("Could not preserve previous extension");
+        if(!stage.renameTo(live)){if(backup.exists())backup.renameTo(live);throw new IOException("Activation failed");}
+        return entry;
+    }
+    public File[] list() { File[] a=root.listFiles(File::isDirectory); return a==null?new File[0]:a; }
+    public boolean rollback(String id) {
+        File live=new File(root,id), backup=new File(root,id+".last-good");
+        if(!backup.isDirectory()) return false;
+        File failed=new File(root,id+".failed"); delete(failed);
+        if(live.exists())live.renameTo(failed);
+        boolean ok=backup.renameTo(live); if(ok)delete(failed); return ok;
+    }
+    public void logError(String id, Throwable error) {
+        try { File d=new File(root,id);d.mkdirs();try(FileWriter w=new FileWriter(new File(d,"error.log"),true)){w.write(new Date()+" "+error+"\\n");} } catch(Exception ignored) {}
+    }
+    private static void delete(File f) {
+        if(f.isDirectory()){File[] a=f.listFiles();if(a!=null)for(File x:a)delete(x);}
+        f.delete();
+    }
+}
+''')
