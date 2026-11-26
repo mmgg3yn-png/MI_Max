@@ -301,3 +301,130 @@ if "mimax_personalization" not in p:
 master.write_text(p)
 
 print("Mi_Max per-app labels, per-surface label hiding, icon masks and per-page wallpaper controls integrated into OpenLauncher views.")
+
+
+# Extend OpenLauncher's existing backup/restore format with Mi_Max settings and declarative packs.
+backup = Path("app/src/main/java/com/benny/openlauncher/util/BackupHelper.java")
+backup.write_text(r'''package com.benny.openlauncher.util;
+
+import android.content.Context;
+import android.net.Uri;
+import android.widget.Toast;
+import com.benny.openlauncher.R;
+import java.io.*;
+import java.util.zip.*;
+
+public class BackupHelper {
+    private static final String[] EXTRA_PREFS = new String[] {
+        "mimax_island_state.xml",
+        "me_island_themes_v1.xml",
+        "mimax_app_customization.xml",
+        "mimax_page_wallpapers.xml"
+    };
+
+    public static void backupConfig(Context context, Uri uri) {
+        File data = new File(context.getApplicationInfo().dataDir);
+        try (OutputStream raw = context.getContentResolver().openOutputStream(uri);
+             ZipOutputStream zip = new ZipOutputStream(new BufferedOutputStream(raw))) {
+            if (raw == null) throw new IOException("Backup destination is unavailable");
+            addIfExists(zip, new File(data, "databases/home.db"), "home.db");
+            addIfExists(zip, new File(data, "shared_prefs/app.xml"), "app.xml");
+            for (String name : EXTRA_PREFS) {
+                addIfExists(zip, new File(data, "shared_prefs/" + name), "prefs/" + name);
+            }
+            File extensions = new File(context.getFilesDir(), "mimax-extensions");
+            addDirectoryToZip(zip, extensions, "extensions");
+            zip.finish();
+            Toast.makeText(context, R.string.toast_backup_success, Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(context, R.string.toast_backup_error, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    public static void restoreConfig(Context context, Uri uri) {
+        File data = new File(context.getApplicationInfo().dataDir);
+        long total = 0;
+        try (InputStream raw = context.getContentResolver().openInputStream(uri);
+             ZipInputStream zip = new ZipInputStream(new BufferedInputStream(raw))) {
+            if (raw == null) throw new IOException("Backup source is unavailable");
+            ZipEntry entry;
+            byte[] buffer = new byte[8192];
+            while ((entry = zip.getNextEntry()) != null) {
+                String name = entry.getName();
+                File target = restoreTarget(context, data, name);
+                if (target == null) { zip.closeEntry(); continue; }
+                String root = data.getCanonicalPath() + File.separator;
+                if (!target.getCanonicalPath().startsWith(root)) throw new SecurityException("Unsafe restore path");
+                if (entry.isDirectory()) {
+                    target.mkdirs();
+                    zip.closeEntry();
+                    continue;
+                }
+                File parent = target.getParentFile();
+                if (parent != null && !parent.exists() && !parent.mkdirs()) throw new IOException("Cannot create restore folder");
+                long entryBytes = 0;
+                try (FileOutputStream out = new FileOutputStream(target)) {
+                    int count;
+                    while ((count = zip.read(buffer)) != -1) {
+                        entryBytes += count;
+                        total += count;
+                        if (entryBytes > 16L * 1024L * 1024L || total > 64L * 1024L * 1024L)
+                            throw new IOException("Backup exceeds safe extraction limits");
+                        out.write(buffer, 0, count);
+                    }
+                }
+                zip.closeEntry();
+            }
+            Toast.makeText(context, R.string.toast_backup_success, Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(context, R.string.toast_backup_error, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private static File restoreTarget(Context context, File data, String name) throws IOException {
+        if ("home.db".equals(name)) return new File(data, "databases/home.db");
+        if ("app.xml".equals(name)) return new File(data, "shared_prefs/app.xml");
+        if (name.startsWith("prefs/")) {
+            String leaf = name.substring("prefs/".length());
+            for (String allowed : EXTRA_PREFS) {
+                if (allowed.equals(leaf)) return new File(data, "shared_prefs/" + leaf);
+            }
+            return null;
+        }
+        if (name.startsWith("extensions/")) {
+            String relative = name.substring("extensions/".length());
+            if (relative.isEmpty() || relative.startsWith("/") || relative.contains("..") || relative.contains("\\\\"))
+                throw new SecurityException("Unsafe extension path");
+            return new File(new File(context.getFilesDir(), "mimax-extensions"), relative);
+        }
+        return null;
+    }
+
+    private static void addIfExists(ZipOutputStream zip, File file, String entry) throws IOException {
+        if (file.isFile()) addFileToZip(zip, file, entry);
+    }
+
+    private static void addDirectoryToZip(ZipOutputStream zip, File directory, String prefix) throws IOException {
+        if (!directory.isDirectory()) return;
+        File[] children = directory.listFiles();
+        if (children == null) return;
+        for (File child : children) {
+            String name = prefix + "/" + child.getName();
+            if (child.isDirectory()) addDirectoryToZip(zip, child, name);
+            else if (child.isFile()) addFileToZip(zip, child, name);
+        }
+    }
+
+    public static void addFileToZip(ZipOutputStream zip, File file, String name) throws IOException {
+        zip.putNextEntry(new ZipEntry(name));
+        try (InputStream in = new BufferedInputStream(new FileInputStream(file))) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = in.read(buffer)) != -1) zip.write(buffer, 0, count);
+        }
+        zip.closeEntry();
+    }
+}
+''')
+
+print("Extended BackupHelper to preserve OpenLauncher database/settings, Mi_Max personalization, island themes and declarative extension packages with safe restore paths.")
