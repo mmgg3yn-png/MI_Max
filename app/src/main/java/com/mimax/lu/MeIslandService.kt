@@ -224,7 +224,13 @@ class MeIslandService : Service() {
         view.animate().setInterpolator(animationInterpolator(theme.animation)).setDuration(theme.animationMs.toLong()).start()
     }
 
-    private fun animationInterpolator(name: String) = when (name) {\n        "spring" -> OvershootInterpolator(0.65f)\n        "fade_slide" -> DecelerateInterpolator()\n        else -> AccelerateDecelerateInterpolator()\n    }\n\n    private fun removeIsland() {
+    private fun animationInterpolator(name: String) = when (name) {
+        "spring" -> OvershootInterpolator(0.65f)
+        "fade_slide" -> DecelerateInterpolator()
+        else -> AccelerateDecelerateInterpolator()
+    }
+
+    private fun removeIsland() {
         island?.let { view ->
             val duration = MeIslandThemeManager(this).current().animationMs.coerceAtMost(350).toLong()
             view.animate().alpha(0f).scaleX(.78f).scaleY(.78f).setDuration(duration).withEndAction {
