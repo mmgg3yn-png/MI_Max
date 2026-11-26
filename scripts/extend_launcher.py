@@ -1871,3 +1871,92 @@ if "case MiMaxSpotlight:" not in s:
     if switch not in s: raise SystemExit("LauncherAction SearchBar switch marker missing")
     s=s.replace(switch,switchNew,1)
 actions.write_text(s)
+
+
+
+
+# Large folder grid and visual styles for the upstream GroupPopupView.
+folderPatch = """
+groupPopup = Path("app/src/main/java/com/benny/openlauncher/widget/GroupPopupView.java")
+g = groupPopup.read_text()
+g = g.replace("int[] cellSize = GroupPopupView.GroupDef.getCellSize(item.getGroupItems().size());", \"""android.content.SharedPreferences folderPrefs = context.getSharedPreferences("mimax_folder_settings", Context.MODE_PRIVATE);
+        int folderColumns = folderPrefs.getInt("columns", 0);
+        int folderCount = item.getGroupItems().size();
+        int[] cellSize = folderColumns > 0
+                ? new int[]{Math.max(2, Math.min(5, folderColumns)), Math.max(1, (folderCount + Math.max(2, Math.min(5, folderColumns)) - 1) / Math.max(2, Math.min(5, folderColumns)))}
+                : GroupPopupView.GroupDef.getCellSize(folderCount);\""", 1)
+g = g.replace("int iconSize = Tool.dp2px(Setup.appSettings().getDesktopIconSize());", \"""int iconSize = Tool.dp2px(folderPrefs.getInt("icon_size", Setup.appSettings().getDesktopIconSize()));
+        int corner = folderPrefs.getInt("corner_dp", 22);
+        _popupCard.setRadius(Tool.dp2px(corner));
+        try {
+            _popupCard.setCardBackgroundColor(Color.parseColor(folderPrefs.getString("background", "#EE182230")));
+        } catch (Exception ignored) { }\""", 1)
+g = g.replace("static int _maxItem = 12;", "static int _maxItem = 20;")
+g = g.replace(\"""            if (count <= 12)
+                return new int[]{4, 3};
+            return new int[]{0, 0};\""", \"""            if (count <= 12)
+                return new int[]{4, 3};
+            if (count <= 16)
+                return new int[]{4, 4};
+            if (count <= 20)
+                return new int[]{5, 4};
+            return new int[]{5, (count + 4) / 5};\""", 1)
+groupPopup.write_text(g)
+"""
+
+(JAVA / "MiMaxFolderSettingsActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+import android.app.Activity;
+import android.os.Bundle;
+import android.widget.*;
+public final class MiMaxFolderSettingsActivity extends Activity {
+ private android.content.SharedPreferences prefs;
+ private EditText color;
+ private Spinner columns;
+ private SeekBar icon,corner;
+ private TextView status;
+ private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+ @Override protected void onCreate(Bundle b){super.onCreate(b);prefs=getSharedPreferences("mimax_folder_settings",0);
+  LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(18),dp(18),dp(18),dp(24));root.setBackgroundColor(0xff101722);
+  TextView title=new TextView(this);title.setText("Large folders and folder styles");title.setTextSize(23);title.setTextColor(-1);root.addView(title);
+  TextView note=new TextView(this);note.setText("Choose a folder grid from 2 to 5 columns, larger folder icons, roundness and a custom translucent background.");note.setTextColor(0xffc2cfdd);note.setPadding(0,dp(8),0,dp(12));root.addView(note);
+  TextView columnsLabel=new TextView(this);columnsLabel.setText("Folder grid columns");columnsLabel.setTextColor(-1);root.addView(columnsLabel);
+  columns=new Spinner(this);String[] choices={"Auto","2","3","4","5"};columns.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,choices));
+  int old=prefs.getInt("columns",0);columns.setSelection(old==0?0:Math.max(1,Math.min(4,old-1)));root.addView(columns);
+  icon=seek(root,"Folder icon size (dp)",32,72,prefs.getInt("icon_size",48));
+  corner=seek(root,"Corner radius (dp)",0,40,prefs.getInt("corner_dp",22));
+  color=new EditText(this);color.setSingleLine(true);color.setTextColor(-1);color.setHint("Background color (#AARRGGBB)");color.setText(prefs.getString("background","#EE182230"));root.addView(color);
+  Button apply=new Button(this);apply.setText("Save folder design");root.addView(apply);apply.setOnClickListener(v->{
+   try{
+    String[] values={"0","2","3","4","5"};int col=Integer.parseInt(values[columns.getSelectedItemPosition()]);
+    android.graphics.Color.parseColor(color.getText().toString().trim());
+    prefs.edit().putInt("columns",col).putInt("icon_size",icon.getProgress()+32).putInt("corner_dp",corner.getProgress()).putString("background",color.getText().toString().trim()).apply();
+    status.setText("Folder design saved. Close and reopen folders to refresh.");
+   }catch(Exception e){status.setText("Enter a valid ARGB color such as #EE182230");}
+  });
+  status=new TextView(this);status.setTextColor(0xffb8d9ff);status.setPadding(0,dp(10),0,0);root.addView(status);setContentView(root);
+ }
+ private SeekBar seek(LinearLayout root,String title,int min,int max,int value){TextView l=new TextView(this);l.setTextColor(-1);l.setText(title+": "+value);root.addView(l);SeekBar s=new SeekBar(this);s.setMax(max-min);s.setProgress(Math.max(0,Math.min(max-min,value-min)));s.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar b,int p,boolean u){l.setText(title+": "+(p+min));}public void onStartTrackingTouch(SeekBar b){}public void onStopTrackingTouch(SeekBar b){}});root.addView(s);return s;}
+}
+''')
+
+groupPopup = Path("app/src/main/java/com/benny/openlauncher/widget/GroupPopupView.java")
+g = groupPopup.read_text()
+exec(folderPatch)
+manifest=BASE / "AndroidManifest.xml"
+m=manifest.read_text()
+if "com.benny.openlauncher.mimax.MiMaxFolderSettingsActivity" not in m:
+ m=m.replace("</application>",'''        <activity android:name="com.benny.openlauncher.mimax.MiMaxFolderSettingsActivity" android:exported="false" android:label="Folder styles" />
+    </application>''',1)
+manifest.write_text(m)
+master=BASE / "res/xml/preferences_master.xml"
+p=master.read_text()
+if "mimax_folder_settings" not in p:
+ entry='''    <PreferenceCategory android:title="Mi_Max Folders">
+        <Preference android:key="mimax_folder_settings" android:title="Large folders and styles"
+            android:summary="Customize folder grids, icon sizes, corners and backgrounds">
+            <intent android:targetPackage="com.mimax.launcher" android:targetClass="com.benny.openlauncher.mimax.MiMaxFolderSettingsActivity" />
+        </Preference>
+    </PreferenceCategory>
+'''
+ p=p.replace("</PreferenceScreen>",entry+"</PreferenceScreen>",1)
+master.write_text(p)

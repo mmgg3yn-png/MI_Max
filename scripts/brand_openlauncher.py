@@ -746,3 +746,30 @@ if "Extension Developer Studio" not in m:
 '''
     m=m.replace("</PreferenceScreen>",entry+"</PreferenceScreen>",1)
     master.write_text(m)
+
+
+
+
+# Replace the upstream launcher mark with a Mi_Max vector icon on every density.
+icon = BASE / "res/drawable/ic_mimax_launcher.xml"
+icon.parent.mkdir(parents=True, exist_ok=True)
+icon.write_text(r'''<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#0B1320" android:pathData="M0,0h108v108h-108z" />
+    <path android:fillColor="#B8D9FF" android:pathData="M17,76V31c0,-4 5,-6 8,-3l29,31 29,-31c3,-3 8,-1 8,3v45h-14V49L57,69c-2,2 -5,2 -7,0L31,49v27z" />
+    <path android:fillColor="#55D8C7" android:pathData="M84,18a7,7 0,1 0,0.1 0z" />
+    <path android:fillColor="#55D8C7" android:pathData="M20,84h68v5h-68z" />
+</vector>
+''')
+manifest = BASE / "AndroidManifest.xml"
+m = manifest.read_text()
+m = m.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@drawable/ic_mimax_launcher"')
+if 'android:roundIcon=' not in m:
+    m = m.replace('android:icon="@drawable/ic_mimax_launcher"', 'android:icon="@drawable/ic_mimax_launcher"\n        android:roundIcon="@drawable/ic_mimax_launcher"', 1)
+manifest.write_text(m)
+
+print("Applied the Mi_Max launcher vector brand icon to the app manifest.")
