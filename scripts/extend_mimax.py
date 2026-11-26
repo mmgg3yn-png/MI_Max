@@ -72,7 +72,28 @@ public final class MeIslandThemeManager {
     public boolean blurEnabled() { return prefs.getBoolean("blur_enabled",true); }
     public void setBlurEnabled(boolean enabled) { prefs.edit().putBoolean("blur_enabled",enabled).apply(); }
     public void save(Theme t) throws Exception {
-        prefs.edit().putString("pack_"+t.id,t.json().toString()).apply();
+        String key="pack_"+t.id;
+        String previous=prefs.getString(key,null);
+        if(previous!=null) prefs.edit().putString("previous_"+t.id,previous).apply();
+        prefs.edit().putString(key,t.json().toString()).apply();
+    }
+    public Theme findTheme(String id) { return find(all(),id); }
+    public boolean rollback(String id) {
+        String previous=prefs.getString("previous_"+id,null);
+        if(previous==null)return false;
+        prefs.edit().putString("pack_"+id,previous).remove("previous_"+id).apply();
+        return true;
+    }
+    public boolean remove(String id) {
+        if("ltin".equals(id)||"his".equals(id)||"coloros".equals(id))return false;
+        prefs.edit().remove("pack_"+id).remove("previous_"+id).apply();
+        if(id.equals(selectedId()))select("his");
+        return true;
+    }
+    public void removeAllImported() {
+        android.content.SharedPreferences.Editor e=prefs.edit();
+        for(String key:prefs.getAll().keySet()) if(key.startsWith("pack_")||key.startsWith("previous_"))e.remove(key);
+        e.putString("selected_theme","his").apply();
     }
     public Theme withStyle(Theme t,String style) {
         String layout=style.equals("ltin")?"pill":style.equals("his")?"wide_card":"fluid";
@@ -126,7 +147,8 @@ public final class MeIslandThemeManager {
         return Arrays.asList(
             new Theme("ltin","LTIN","ltin","pill","spring",0xff050505L,0xffffffffL,18,28,178,34,104,260),
             new Theme("his","HIS","his","wide_card","morph",0xee10151dL,0xffb8d9ffL,28,24,196,38,116,340),
-            new Theme("coloros","ColorOS","coloros","fluid","spring",0xcc263442L,0xffbdebffL,32,22,190,38,112,300)
+            new Theme("coloros","ColorOS","coloros","fluid","spring",0xcc263442L,0xffbdebffL,32,22,190,38,112,300),
+            new Theme("oneplus_sample","OnePlus Split","custom","split","spring",0xef101820L,0xff59d6c2L,34,20,224,40,124,360)
         );
     }
     private static Theme parse(JSONObject root) throws Exception {
@@ -198,7 +220,11 @@ public final class MeIslandService extends Service {
     @Override public void onCreate(){super.onCreate();wm=(WindowManager)getSystemService(WINDOW_SERVICE);createChannel();registerBattery();}
     @Override public int onStartCommand(Intent intent,int flags,int startId){
         String action=intent==null?null:intent.getAction();
-        if(ACTION_STOP.equals(action)){handler.removeCallbacks(tick);items.clear();removeView();stopForeground(true);stopSelf();return START_NOT_STICKY;}
+        if(intent==null){
+            timerEnds=getSharedPreferences("mimax_island_state",0).getLong("timer_end",0L);
+            if(timerEnds>System.currentTimeMillis())items.put(TIMER_ID,new Item(TIMER_ID,"Timer",format(timerEnds-System.currentTimeMillis()),100,0,null));
+        }
+        if(ACTION_STOP.equals(action)){handler.removeCallbacks(tick);items.clear();getSharedPreferences("mimax_island_state",0).edit().remove("timer_end").apply();removeView();stopForeground(true);stopSelf();return START_NOT_STICKY;}
         if(ACTION_TIMER.equals(action)){
             long duration=Math.max(1000,Math.min(86400000,intent.getLongExtra(EXTRA_DURATION,60000)));
             timerEnds=System.currentTimeMillis()+duration;
@@ -250,7 +276,7 @@ public final class MeIslandService extends Service {
         MeIslandThemeManager.Theme theme=new MeIslandThemeManager(this).current();
         if(root==null || !shownId.equals(item.id+"|"+theme.style+"|"+theme.layout)){removeView();buildView(theme,item);}
         if(title!=null) title.setText(formatTitle(item,theme));
-        if(detail!=null) detail.setText(expanded?item.body:"");
+        if(detail!=null) detail.setText(expanded||"wide_card".equals(theme.layout)||"split".equals(theme.layout)?item.body:"");
         if(mark!=null) mark.setText(theme.style.equals("ltin")?"●":theme.style.equals("his")?"◉":"✦");
         if(params!=null){
             params.width=dp(expanded?Math.max(theme.widthDp,220):theme.widthDp);
@@ -264,12 +290,12 @@ public final class MeIslandService extends Service {
     private void buildView(MeIslandThemeManager.Theme theme,Item item){
         root=new LinearLayout(this);
         root.setGravity(Gravity.CENTER_VERTICAL);
-        root.setOrientation(theme.style.equals("his")?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);
+        root.setOrientation(("his".equals(theme.style)||"wide_card".equals(theme.layout)||"split".equals(theme.layout))?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);
         root.setPadding(dp(theme.style.equals("ltin")?16:14),dp(5),dp(14),dp(5));
         root.setBackground(background(theme));root.setElevation(dp(18));
         mark=new TextView(this);mark.setTextColor((int)theme.accent);mark.setTextSize(theme.style.equals("coloros")?14:11);mark.setPadding(0,0,dp(8),0);
         root.addView(mark,new LinearLayout.LayoutParams(-2,-2));
-        LinearLayout texts=new LinearLayout(this);texts.setOrientation(LinearLayout.VERTICAL);texts.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout texts=new LinearLayout(this);texts.setOrientation("split".equals(theme.layout)?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);texts.setGravity(Gravity.CENTER_VERTICAL);
         title=new TextView(this);title.setTextColor(Color.WHITE);title.setTextSize(theme.style.equals("ltin")?12:13);title.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));title.setMaxLines(1);
         detail=new TextView(this);detail.setTextColor(Color.argb(215,245,248,255));detail.setTextSize(11);detail.setMaxLines(2);
         texts.addView(title);texts.addView(detail);
@@ -282,7 +308,12 @@ public final class MeIslandService extends Service {
                 float dx=e.getRawX()-downX,dy=e.getRawY()-downY;
                 if(Math.abs(dx)>dp(36)&&Math.abs(dx)>Math.abs(dy)){cycle(dx<0?1:-1);return true;}
                 if(Math.abs(dy)>dp(28)){expanded=dy>0;render();return true;}
-                return false;
+                if(Math.abs(dx)<dp(20)&&Math.abs(dy)<dp(20)){
+                    Item active=current();
+                    if(active!=null&&active.pending!=null)try{active.pending.send();}catch(Exception ignored){}
+                    expanded=!expanded;render();return true;
+                }
+                return true;
             }return true;
         });
         params=new WindowManager.LayoutParams(dp(theme.widthDp),dp(theme.compactHeightDp),
@@ -318,7 +349,7 @@ public final class MeIslandService extends Service {
         int id=getResources().getIdentifier("status_bar_height","dimen","android");return id>0?getResources().getDimensionPixelSize(id):dp(24);
     }
     private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
-    private void removeView(){if(root!=null){try{root.animate().alpha(0).setDuration(120).withEndAction(()->{try{wm.removeView(root);}catch(Exception ignored){}}).start();}catch(Exception e){try{wm.removeView(root);}catch(Exception ignored){}}}root=null;title=null;detail=null;mark=null;params=null;shownId="";}
+    private void removeView(){if(root!=null){final View old=root;try{old.animate().alpha(0).setDuration(120).withEndAction(()->{try{wm.removeView(old);}catch(Exception ignored){}}).start();}catch(Exception e){try{wm.removeView(old);}catch(Exception ignored){}}}root=null;title=null;detail=null;mark=null;params=null;shownId="";}
     @Override public void onDestroy(){handler.removeCallbacksAndMessages(null);if(batteryReceiver!=null)try{unregisterReceiver(batteryReceiver);}catch(Exception ignored){}removeView();super.onDestroy();}
     @Override public IBinder onBind(Intent i){return null;}
 }
@@ -408,6 +439,17 @@ public final class MeIslandSettingsActivity extends Activity {
  private void build(){
   ScrollView scroll=new ScrollView(this);content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(18),dp(18),dp(18),dp(24));content.setBackgroundColor(0xff101722);scroll.addView(content);
   addText("Mi_Max Me Island",24,true);addText("اختَر محركًا يغيّر شكل الجزيرة وتخطيطها وحركتها، وليس لونها فقط.",14,false);
+  addText("الثيمات المثبتة",17,true);
+  java.util.List<MeIslandThemeManager.Theme> installed=manager.all();
+  String[] themeNames=new String[installed.size()];
+  int selectedIndex=0;
+  for(int n=0;n<installed.size();n++){themeNames[n]=installed.get(n).name+" ("+installed.get(n).id+")";if(installed.get(n).id.equals(editing.id))selectedIndex=n;}
+  Spinner savedThemes=spinner(themeNames,themeNames.length>0?themeNames[selectedIndex]:"HIS");
+  content.addView(savedThemes);
+  savedThemes.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
+   public void onNothingSelected(android.widget.AdapterView<?> p){}
+   public void onItemSelected(android.widget.AdapterView<?> p,android.view.View v,int pos,long id){if(pos>=0&&pos<installed.size()){editing=installed.get(pos);applyPreview();}}
+  });
   addText("محركات الجزيرة",18,true);
   for(String id:new String[]{"ltin","his","coloros"}){
    MeIslandThemeManager.Theme t=find(id);Button b=button(t.name+" — "+description(id));b.setOnClickListener(v->{editing=manager.withStyle(editing,id);applyPreview();status.setText("تم اختيار "+t.name);});content.addView(b);
@@ -418,6 +460,8 @@ public final class MeIslandSettingsActivity extends Activity {
   blurSwitch=new Switch(this);blurSwitch.setText("تفعيل Blur عند دعم Android");blurSwitch.setChecked(manager.blurEnabled());content.addView(blurSwitch);
   privacySwitch=new Switch(this);privacySwitch.setText("وضع الخصوصية: إخفاء نص الإشعارات");privacySwitch.setChecked(getSharedPreferences("mimax_island_state",0).getBoolean("privacy",false));content.addView(privacySwitch);
   preview=new TextView(this);preview.setText("◉   Me Island preview   12:45");preview.setTextColor(-1);preview.setGravity(Gravity.CENTER);preview.setPadding(dp(12),dp(12),dp(12),dp(12));content.addView(preview,new LinearLayout.LayoutParams(-1,dp(52)));
+  Button rollback=button("استرجاع آخر نسخة محفوظة من هذا الثيم");content.addView(rollback);rollback.setOnClickListener(v->{if(manager.rollback(editing.id)){editing=manager.findTheme(editing.id);status.setText("تم استرجاع النسخة السابقة");applyPreview();}else status.setText("لا توجد نسخة سابقة لهذا الثيم");});
+  Button removeTheme=button("حذف الثيم المستورد");content.addView(removeTheme);removeTheme.setOnClickListener(v->{if(manager.remove(editing.id)){editing=manager.current();status.setText("تم حذف الثيم");applyPreview();}else status.setText("لا يمكن حذف محركات الجزيرة الأساسية");});
   Button save=button("حفظ التصميم وتطبيقه");content.addView(save);save.setOnClickListener(v->save());
   Button overlay=button("السماح بالظهور فوق التطبيقات");content.addView(overlay);overlay.setOnClickListener(v->{if(Build.VERSION.SDK_INT>=23&&!Settings.canDrawOverlays(this))startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));});
   Button access=button("تفعيل Notification Access");content.addView(access);access.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
@@ -502,3 +546,44 @@ if "mimax_island_settings" not in p:
 master.write_text(p)
 
 print("Extended Me Island engines, live notification activity bridge, timer, charging event, theme editor and .mt1 import/export.")
+
+
+# Separate maintenance path that can reset broken imported packs.
+
+(JAVA / "ExtensionRecoveryActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+import android.app.Activity;
+import android.content.Intent;
+import android.os.Bundle;
+import android.view.Gravity;
+import android.widget.*;
+import java.io.File;
+public final class ExtensionRecoveryActivity extends Activity {
+ private LinearLayout root;
+ private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+ @Override protected void onCreate(Bundle b){super.onCreate(b);root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(20),dp(20),dp(20),dp(20));root.setBackgroundColor(0xff101722);
+  TextView title=new TextView(this);title.setText("Mi_Max Recovery");title.setTextSize(24);title.setTextColor(-1);root.addView(title);
+  TextView note=new TextView(this);note.setText("Independent maintenance screen. It can reset imported visual packs without loading the normal launcher workspace.");note.setTextColor(0xffcbd5e1);note.setPadding(0,dp(12),0,dp(16));root.addView(note);
+  Button reset=new Button(this);reset.setText("Reset Me Island to built-in HIS");reset.setOnClickListener(v->{new MeIslandThemeManager(this).removeAllImported();Toast.makeText(this,"Visual packs reset",Toast.LENGTH_SHORT).show();});root.addView(reset);
+  Button clear=new Button(this);clear.setText("Remove all installed declarative extensions");clear.setOnClickListener(v->{File dir=new File(getFilesDir(),"mimax-extensions");delete(dir);Toast.makeText(this,"Extension storage cleared",Toast.LENGTH_SHORT).show();});root.addView(clear);
+  Button manage=new Button(this);manage.setText("Open Extension Manager");manage.setOnClickListener(v->startActivity(new Intent(this,ExtensionManagerActivity.class)));root.addView(manage);
+  Button island=new Button(this);island.setText("Open Me Island settings");island.setOnClickListener(v->startActivity(new Intent(this,MeIslandSettingsActivity.class)));root.addView(island);
+  setContentView(root);
+ }
+ private void delete(File f){if(f.isDirectory()){File[] a=f.listFiles();if(a!=null)for(File x:a)delete(x);}if(f.exists())f.delete();}
+}
+''')
+
+manifest = BASE / "AndroidManifest.xml"
+m = manifest.read_text()
+if "com.benny.openlauncher.mimax.ExtensionRecoveryActivity" not in m:
+    m = m.replace("</application>", '''        <activity
+            android:name="com.benny.openlauncher.mimax.ExtensionRecoveryActivity"
+            android:exported="true"
+            android:label="Mi_Max Recovery">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>''', 1)
+manifest.write_text(m)
