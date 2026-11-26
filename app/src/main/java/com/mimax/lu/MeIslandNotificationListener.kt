@@ -54,7 +54,8 @@ class MeIslandNotificationListener : NotificationListenerService() {
             gravity = Gravity.CENTER_VERTICAL
             maxLines = 3
             ellipsize = android.text.TextUtils.TruncateAt.END
-            text = if (body.isBlank()) title.take(90) else "$title\n$body".take(180)
+            val hideContent = getSharedPreferences("me_island_v1", MODE_PRIVATE).getBoolean("hide_notification_content", false)
+            text = if (hideContent) "New notification" else if (body.isBlank()) title.take(90) else "$title\n$body".take(180)
             setPadding(dp(17), dp(10), dp(17), dp(10))
             background = GradientDrawable().apply {
                 setColor(if (theme.style == "ltin") Color.BLACK else theme.background.toInt())
