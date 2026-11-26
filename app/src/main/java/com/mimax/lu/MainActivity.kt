@@ -515,6 +515,9 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
             extensions=manager.discover()
             message="Recovery mode: all registered extensions are disabled. Re-enable trusted extensions individually."
         },modifier=Modifier.fillMaxWidth()) { Text("Disable all • Recovery mode") }
+        OutlinedButton(onClick={ context.startActivity(Intent(context, ExtensionRecoveryActivity::class.java)) },modifier=Modifier.fillMaxWidth()) {
+            Text("Open separate recovery screen")
+        }
         if(message.isNotBlank()) Text(message,color=Color(0xFFB9D9FF),fontSize=11.sp)
         Spacer(Modifier.height(8.dp))
         if(extensions.isEmpty()) {
