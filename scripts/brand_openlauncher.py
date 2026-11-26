@@ -380,13 +380,26 @@ public final class ExtensionRegistry {
     public static final class Entry {
         public final String id, name, version;
         public final int minApi;
-        public final List<String> permissions;
+        public final List<String> permissions, dependencies;
         Entry(JSONObject j) throws Exception {
             id=j.getString("id"); name=j.getString("name"); version=j.getString("version");
-            minApi=j.optInt("minApi",21); permissions=new ArrayList<>();
+            minApi=j.optInt("minApi",21); permissions=new ArrayList<>(); dependencies=new ArrayList<>();
             JSONArray a=j.optJSONArray("permissions");
-            if(a!=null) for(int i=0;i<a.length();i++) permissions.add(a.getString(i));
-            if(!id.matches("[A-Za-z0-9_.-]{3,80}")) throw new SecurityException("Invalid extension id");
+            if(a!=null) for(int i=0;i<a.length();i++) {
+                String permission=a.getString(i);
+                if(!Arrays.asList("island.layout","island.animation","island.activities","island.assets","launcher.shortcuts").contains(permission))
+                    throw new SecurityException("Unsupported extension permission: "+permission);
+                if(!permissions.contains(permission))permissions.add(permission);
+            }
+            JSONArray d=j.optJSONArray("dependencies");
+            if(d!=null) for(int i=0;i<d.length();i++) {
+                String dependency=d.getString(i);
+                if(!dependency.matches("[A-Za-z0-9_.-]{3,80}") || dependency.equals(id))
+                    throw new SecurityException("Invalid extension dependency");
+                dependencies.add(dependency);
+            }
+            if(!id.matches("[A-Za-z0-9_.-]{3,80}") || name.trim().isEmpty() || name.length()>80 || version.trim().isEmpty())
+                throw new SecurityException("Invalid extension identity");
         }
     }
     public Entry install(InputStream archive, int sdk) throws Exception {
@@ -419,6 +432,39 @@ public final class ExtensionRegistry {
         if(!stage.renameTo(live)){if(backup.exists())backup.renameTo(live);throw new IOException("Activation failed");}
         return entry;
     }
+    private android.content.SharedPreferences state(Context c) { return c.getSharedPreferences("mimax_extension_state",Context.MODE_PRIVATE); }
+    public Entry getEntry(File dir) throws Exception {
+        File mf=new File(dir,"manifest.json");
+        if(!mf.isFile()||mf.length()>65536)throw new IOException("Invalid extension manifest");
+        byte[] b=new byte[(int)mf.length()];
+        try(FileInputStream in=new FileInputStream(mf)){int n=in.read(b);if(n!=b.length)throw new IOException("Incomplete extension manifest");}
+        return new Entry(new JSONObject(new String(b,"UTF-8")));
+    }
+    public boolean isEnabled(Context c,String id) { return state(c).getBoolean("enabled:"+id,false); }
+    public boolean canEnable(Context c,Entry e) {
+        for(String dependency:e.dependencies)if(!isEnabled(c,dependency))return false;
+        return true;
+    }
+    public boolean enable(Context c,String id) throws Exception {
+        File dir=new File(root,id); Entry e=getEntry(dir);
+        if(!canEnable(c,e))throw new IllegalStateException("Required dependencies are not enabled");
+        java.util.HashSet<String> grants=new java.util.HashSet<>(e.permissions);
+        state(c).edit().putStringSet("grants:"+id,grants).putBoolean("enabled:"+id,true).putInt("failures:"+id,0).apply();
+        return true;
+    }
+    public void disable(Context c,String id) { state(c).edit().putBoolean("enabled:"+id,false).apply(); }
+    public boolean remove(String id) {
+        if(!id.matches("[A-Za-z0-9_.-]{3,80}"))return false;
+        File live=new File(root,id),backup=new File(root,id+".last-good");
+        delete(live);delete(backup);
+        return !live.exists()&&!backup.exists();
+    }
+    public void recordFailure(Context c,String id,Throwable error) {
+        if(id==null||!id.matches("[A-Za-z0-9_.-]{1,80}"))id="unknown";
+        int failures=state(c).getInt("failures:"+id,0)+1;
+        state(c).edit().putInt("failures:"+id,failures).putBoolean("enabled:"+id,failures<3).apply();
+        logError(id,error);
+    }
     public File[] list() { File[] a=root.listFiles(File::isDirectory); return a==null?new File[0]:a; }
     public boolean rollback(String id) {
         File live=new File(root,id), backup=new File(root,id+".last-good");
@@ -426,6 +472,17 @@ public final class ExtensionRegistry {
         File failed=new File(root,id+".failed"); delete(failed);
         if(live.exists())live.renameTo(failed);
         boolean ok=backup.renameTo(live); if(ok)delete(failed); return ok;
+    }
+    public String readLog(String id) {
+        File file=new File(new File(root,id),"error.log");
+        if(!file.isFile())return "No errors recorded for this extension.";
+        StringBuilder out=new StringBuilder();
+        try(BufferedReader reader=new BufferedReader(new FileReader(file))){
+            String line; java.util.ArrayDeque<String> tail=new java.util.ArrayDeque<>();
+            while((line=reader.readLine())!=null){tail.addLast(line);if(tail.size()>60)tail.removeFirst();}
+            for(String entry:tail)out.append(entry).append("\\n");
+        }catch(Exception e){return "Could not read error log: "+e.getMessage();}
+        return out.toString();
     }
     public void logError(String id, Throwable error) {
         try { File d=new File(root,id);d.mkdirs();try(FileWriter w=new FileWriter(new File(d,"error.log"),true)){w.write(new Date()+" "+error+"\\n");} } catch(Exception ignored) {}
@@ -489,25 +546,61 @@ public final class ExtensionManagerActivity extends Activity {
     private void refresh() {
         list.removeAllViews();
         for(File dir:registry.list()) {
+            final String id=dir.getName();
             TextView row=new TextView(this);
-            String title=dir.getName();
-            File mf=new File(dir,"manifest.json");
-            try(FileInputStream in=new FileInputStream(mf)) {
-                byte[] b=new byte[(int)Math.min(mf.length(),65536)];
-                int n=in.read(b);
-                if(n>0) { JSONObject j=new JSONObject(new String(b,0,n,"UTF-8")); title=j.optString("name",title)+"  "+j.optString("version",""); }
+            String title=id, permissions="No extra permissions", dependencies="No dependencies";
+            boolean canEnable=false;
+            try {
+                ExtensionRegistry.Entry entry=registry.getEntry(dir);
+                title=entry.name+"  "+entry.version+"  ("+id+")";
+                permissions="Requested capabilities: "+(entry.permissions.isEmpty()?"none":android.text.TextUtils.join(", ",entry.permissions));
+                dependencies="Dependencies: "+(entry.dependencies.isEmpty()?"none":android.text.TextUtils.join(", ",entry.dependencies));
+                canEnable=registry.canEnable(this,entry);
             } catch(Exception ignored) {}
-            row.setText(title);
-            row.setTextSize(16);
+            final String permissionSummary=permissions, dependencySummary=dependencies;
+            row.setText(title+"\n"+(registry.isEnabled(this,id)?"Enabled":"Disabled")+"\n"+permissionSummary+"\n"+dependencySummary);
+            row.setTextSize(14);
             row.setPadding(8,18,8,8);
             list.addView(row);
+            Button enable=new Button(this);
+            enable.setText(registry.isEnabled(this,id)?"Disable extension":"Review capabilities and enable");
+            enable.setEnabled(registry.isEnabled(this,id)||canEnable);
+            enable.setOnClickListener(v -> {
+                if(registry.isEnabled(this,id)){registry.disable(this,id);refresh();return;}
+                new android.app.AlertDialog.Builder(this)
+                    .setTitle("Review extension capabilities")
+                    .setMessage(permissionSummary+"\n\n"+dependencySummary+"\n\nThis package contains declarative data only. No executable extension code will be loaded.")
+                    .setNegativeButton("Cancel",null)
+                    .setPositiveButton("Approve and enable",(d,w)->{
+                        try{registry.enable(this,id);Toast.makeText(this,"Extension enabled",Toast.LENGTH_SHORT).show();}
+                        catch(Exception ex){registry.recordFailure(this,id,ex);Toast.makeText(this,ex.getMessage(),Toast.LENGTH_LONG).show();}
+                        refresh();
+                    }).show();
+            });
+            list.addView(enable);
             Button rollback=new Button(this);
             rollback.setText("Rollback to last known good");
             rollback.setOnClickListener(v -> {
-                Toast.makeText(this,registry.rollback(dir.getName())?"Rolled back":"No backup available",Toast.LENGTH_SHORT).show();
+                Toast.makeText(this,registry.rollback(id)?"Rolled back":"No backup available",Toast.LENGTH_SHORT).show();
                 refresh();
             });
             list.addView(rollback);
+            Button remove=new Button(this);
+            remove.setText("Remove extension");
+            remove.setOnClickListener(v->new android.app.AlertDialog.Builder(this)
+                .setTitle("Remove "+id+"?")
+                .setMessage("Remove the installed package and its saved rollback copy?")
+                .setNegativeButton("Cancel",null)
+                .setPositiveButton("Remove",(d,w)->{registry.disable(this,id);registry.remove(id);refresh();})
+                .show());
+            list.addView(remove);
+            Button logs=new Button(this);
+            logs.setText("View extension error log");
+            logs.setOnClickListener(v->new android.app.AlertDialog.Builder(this)
+                .setTitle("Extension log: "+id)
+                .setMessage(registry.readLog(id))
+                .setPositiveButton("Close",null).show());
+            list.addView(logs);
         }
     }
     @Override protected void onActivityResult(int request,int result,Intent data) {
@@ -518,6 +611,7 @@ public final class ExtensionManagerActivity extends Activity {
                 Toast.makeText(this,"Installed "+e.name+" ("+e.version+")",Toast.LENGTH_LONG).show();
                 refresh();
             } catch(Exception ex) {
+                registry.recordFailure(this,"unknown",ex);
                 Toast.makeText(this,"Install failed: "+ex.getMessage(),Toast.LENGTH_LONG).show();
             }
         }
@@ -550,3 +644,105 @@ if "Mi_Max Extensions" not in m:
     if marker not in m:
         raise SystemExit("Could not find About preference insertion point for Extensions")
     master.write_text(m.replace(marker, entry + marker, 1))
+
+
+
+# Extension developer tool: generate a signed-off, declarative ZIP template without executable code.
+(src / "ExtensionDeveloperActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
+import android.os.Bundle;
+import android.text.InputType;
+import android.view.Gravity;
+import android.widget.*;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+public final class ExtensionDeveloperActivity extends Activity {
+    private static final int CREATE_PACKAGE=8812;
+    private EditText id,name,version,dependencies;
+    private CheckBox layout,animation,activities,assets,shortcuts;
+    private TextView status;
+    private JSONObject pendingManifest;
+    private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+    @Override protected void onCreate(Bundle state){
+        super.onCreate(state);
+        LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(18),dp(18),dp(18),dp(24));root.setBackgroundColor(0xff101722);
+        TextView title=new TextView(this);title.setText("Extension Developer Studio");title.setTextSize(23);title.setTextColor(-1);root.addView(title);
+        TextView note=new TextView(this);note.setText("Create a ZIP manifest for a declarative extension. Packages contain data and layout/theme descriptions only; the launcher never executes downloaded code.");note.setTextColor(0xffc5d1df);note.setPadding(0,dp(8),0,dp(14));root.addView(note);
+        id=input("Extension ID (letters, numbers, dot, dash, underscore)","my_extension");root.addView(id);
+        name=input("Display name","My Extension");root.addView(name);
+        version=input("Version","1.0.0");root.addView(version);
+        dependencies=input("Dependencies: comma-separated extension IDs (optional)","");root.addView(dependencies);
+        TextView caps=new TextView(this);caps.setText("Requested capabilities");caps.setTextColor(-1);caps.setTextSize(16);caps.setPadding(0,dp(10),0,dp(5));root.addView(caps);
+        layout=check("island.layout — alter allowed capsule geometry");animation=check("island.animation — choose allowed animations");activities=check("island.activities — declare activity-card templates");assets=check("island.assets — use static image assets");shortcuts=check("launcher.shortcuts — expose approved launcher shortcuts");
+        root.addView(layout);root.addView(animation);root.addView(activities);root.addView(assets);root.addView(shortcuts);
+        Button validate=new Button(this);validate.setText("Validate manifest and export ZIP");root.addView(validate);validate.setOnClickListener(v->export());
+        status=new TextView(this);status.setTextColor(0xffb8d9ff);status.setPadding(0,dp(12),0,0);root.addView(status);
+        setContentView(root);
+    }
+    private EditText input(String hint,String value){EditText e=new EditText(this);e.setSingleLine(true);e.setHint(hint);e.setText(value);e.setTextColor(-1);e.setHintTextColor(0xff98a8ba);return e;}
+    private CheckBox check(String value){CheckBox c=new CheckBox(this);c.setText(value);c.setTextColor(-1);return c;}
+    private void export(){
+        try{
+            String extId=id.getText().toString().trim(),extName=name.getText().toString().trim(),extVersion=version.getText().toString().trim();
+            if(!extId.matches("[A-Za-z0-9_.-]{3,80}"))throw new IllegalArgumentException("Invalid extension ID");
+            if(extName.isEmpty()||extName.length()>80||extVersion.isEmpty()||extVersion.length()>32)throw new IllegalArgumentException("Invalid name or version");
+            JSONArray caps=new JSONArray();if(layout.isChecked())caps.put("island.layout");if(animation.isChecked())caps.put("island.animation");
+            if(activities.isChecked())caps.put("island.activities");if(assets.isChecked())caps.put("island.assets");if(shortcuts.isChecked())caps.put("launcher.shortcuts");
+            JSONArray deps=new JSONArray();String raw=dependencies.getText().toString().trim();
+            if(!raw.isEmpty())for(String part:raw.split(",")){String d=part.trim();if(!d.matches("[A-Za-z0-9_.-]{3,80}")||d.equals(extId))throw new IllegalArgumentException("Invalid dependency: "+d);deps.put(d);}
+            pendingManifest=new JSONObject().put("format","mimax-declarative-extension").put("manifestVersion",1)
+                .put("id",extId).put("name",extName).put("version",extVersion).put("minApi",21)
+                .put("permissions",caps).put("dependencies",deps);
+            Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/zip").addCategory(Intent.CATEGORY_OPENABLE)
+                .putExtra(Intent.EXTRA_TITLE,extId+"-"+extVersion+".zip");
+            startActivityForResult(i,CREATE_PACKAGE);
+            status.setText("Manifest valid. Choose where to save the ZIP package.");
+        }catch(Exception e){status.setText("Validation failed: "+e.getMessage());}
+    }
+    @Override protected void onActivityResult(int request,int result,Intent data){
+        super.onActivityResult(request,result,data);
+        if(request!=CREATE_PACKAGE||result!=RESULT_OK||data==null||data.getData()==null||pendingManifest==null)return;
+        try(OutputStream raw=getContentResolver().openOutputStream(data.getData());ZipOutputStream zip=new ZipOutputStream(raw)){
+            if(raw==null)throw new java.io.IOException("Could not open destination");
+            byte[] manifest=pendingManifest.toString(2).getBytes(StandardCharsets.UTF_8);
+            zip.putNextEntry(new ZipEntry("manifest.json"));zip.write(manifest);zip.closeEntry();
+            byte[] readme=("Mi_Max declarative extension\\nID: "+pendingManifest.getString("id")+"\\nNo executable code is included.\\n").getBytes(StandardCharsets.UTF_8);
+            zip.putNextEntry(new ZipEntry("README.txt"));zip.write(readme);zip.closeEntry();zip.finish();
+            status.setText("Created "+pendingManifest.getString("id")+".zip successfully.");
+        }catch(Exception e){status.setText("Export failed: "+e.getMessage());}
+    }
+}
+''')
+
+manifest = Path("app/src/main/AndroidManifest.xml")
+m = manifest.read_text()
+if "com.benny.openlauncher.mimax.ExtensionDeveloperActivity" not in m:
+    m = m.replace('</application>', '''        <activity
+            android:name="com.benny.openlauncher.mimax.ExtensionDeveloperActivity"
+            android:exported="false"
+            android:label="Extension Developer Studio" />
+    </application>''', 1)
+manifest.write_text(m)
+
+master = Path("app/src/main/res/xml/preferences_master.xml")
+m = master.read_text()
+if "Extension Developer Studio" not in m:
+    entry = '''        <Preference
+            android:title="Extension Developer Studio"
+            android:summary="Create and validate declarative extension ZIP templates">
+            <intent android:targetPackage="com.mimax.launcher"
+                android:targetClass="com.benny.openlauncher.mimax.ExtensionDeveloperActivity" />
+        </Preference>
+'''
+    m=m.replace("</PreferenceScreen>",entry+"</PreferenceScreen>",1)
+    master.write_text(m)

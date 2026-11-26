@@ -71,6 +71,10 @@ public final class MeIslandThemeManager {
     }
     public boolean blurEnabled() { return prefs.getBoolean("blur_enabled",true); }
     public void setBlurEnabled(boolean enabled) { prefs.edit().putBoolean("blur_enabled",enabled).apply(); }
+    public boolean lowPerformanceEnabled() { return prefs.getBoolean("low_performance",false); }
+    public void setLowPerformanceEnabled(boolean enabled) { prefs.edit().putBoolean("low_performance",enabled).apply(); }
+    public boolean reducedMotionEnabled() { return prefs.getBoolean("reduced_motion",false); }
+    public void setReducedMotionEnabled(boolean enabled) { prefs.edit().putBoolean("reduced_motion",enabled).apply(); }
     public void save(Theme t) throws Exception {
         String key="pack_"+t.id;
         String previous=prefs.getString(key,null);
@@ -295,7 +299,12 @@ public final class MeIslandService extends Service {
             params.y=cameraSafeTop()+dp(expanded?5:2);
             try{wm.updateViewLayout(root,params);}catch(Exception ignored){}
         }
-        if(root!=null){root.setBackground(background(theme));root.animate().setInterpolator(interpolator(theme.animation)).setDuration(theme.animationMs).start();}
+        if(root!=null){
+            root.setBackground(background(theme));
+            long motion=performance.reducedMotionEnabled()?0L:(performance.lowPerformanceEnabled()?Math.min(120,theme.animationMs):theme.animationMs);
+            if(motion==0L){root.setAlpha(1f);root.setScaleX(1f);root.setScaleY(1f);}
+            else root.animate().setInterpolator(interpolator(theme.animation)).setDuration(motion).start();
+        }
         shownId=item.id+"|"+theme.style+"|"+theme.layout;
     }
     private void buildView(MeIslandThemeManager.Theme theme,Item item){
@@ -332,9 +341,15 @@ public final class MeIslandService extends Service {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT);
         params.gravity=Gravity.TOP|Gravity.CENTER_HORIZONTAL;params.y=cameraSafeTop()+dp(2);
-        if(Build.VERSION.SDK_INT>=31&&new MeIslandThemeManager(this).blurEnabled()){params.flags|=WindowManager.LayoutParams.FLAG_BLUR_BEHIND;params.setBlurBehindRadius(dp(theme.blur));}
-        try{wm.addView(root,params);root.setAlpha(0f);root.setScaleX(.86f);root.setScaleY(.86f);root.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(theme.animationMs).setInterpolator(interpolator(theme.animation)).start();}
-        catch(Exception e){root=null;title=null;detail=null;mark=null;params=null;}
+        MeIslandThemeManager performance=new MeIslandThemeManager(this);
+        if(Build.VERSION.SDK_INT>=31&&performance.blurEnabled()&&!performance.lowPerformanceEnabled()){params.flags|=WindowManager.LayoutParams.FLAG_BLUR_BEHIND;params.setBlurBehindRadius(dp(theme.blur));}
+        try{
+            wm.addView(root,params);
+            MeIslandThemeManager performance=new MeIslandThemeManager(this);
+            long motion=performance.reducedMotionEnabled()?0L:(performance.lowPerformanceEnabled()?Math.min(120,theme.animationMs):theme.animationMs);
+            if(motion==0L){root.setAlpha(1f);root.setScaleX(1f);root.setScaleY(1f);}
+            else {root.setAlpha(0f);root.setScaleX(.86f);root.setScaleY(.86f);root.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(motion).setInterpolator(interpolator(theme.animation)).start();}
+        } catch(Exception e){root=null;title=null;detail=null;mark=null;params=null;}
         shownId=item.id+"|"+theme.style+"|"+theme.layout;
     }
     private void cycle(int direction){
@@ -443,7 +458,7 @@ public final class MeIslandSettingsActivity extends Activity {
  private LinearLayout content;
  private SeekBar width,height,radius,blur,animation,duration;
  private Spinner layout,anim;
- private Switch blurSwitch,privacySwitch;
+ private Switch blurSwitch,privacySwitch,lowPerformanceSwitch,reducedMotionSwitch;
  private TextView status,preview;
  @Override protected void onCreate(Bundle b){super.onCreate(b);manager=new MeIslandThemeManager(this);editing=manager.current();build();}
  private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
@@ -470,6 +485,8 @@ public final class MeIslandSettingsActivity extends Activity {
   width=seek("العرض",120,300,editing.widthDp);height=seek("ارتفاع العرض",24,70,editing.compactHeightDp);radius=seek("استدارة الزوايا",8,48,editing.cornerDp);blur=seek("قوة التمويه",0,80,editing.blur);animation=seek("مدة الحركة",100,900,editing.animationMs);duration=seek("مدة المؤقت بالدقائق",1,120,10);
   blurSwitch=new Switch(this);blurSwitch.setText("تفعيل Blur عند دعم Android");blurSwitch.setChecked(manager.blurEnabled());content.addView(blurSwitch);
   privacySwitch=new Switch(this);privacySwitch.setText("وضع الخصوصية: إخفاء نص الإشعارات");privacySwitch.setChecked(getSharedPreferences("mimax_island_state",0).getBoolean("privacy",false));content.addView(privacySwitch);
+  lowPerformanceSwitch=new Switch(this);lowPerformanceSwitch.setText("وضع الأداء المنخفض: تعطيل Blur وتقليل الحركة");lowPerformanceSwitch.setChecked(manager.lowPerformanceEnabled());content.addView(lowPerformanceSwitch);
+  reducedMotionSwitch=new Switch(this);reducedMotionSwitch.setText("تقليل الحركة والانتقالات");reducedMotionSwitch.setChecked(manager.reducedMotionEnabled());content.addView(reducedMotionSwitch);
   preview=new TextView(this);preview.setText("◉   Me Island preview   12:45");preview.setTextColor(-1);preview.setGravity(Gravity.CENTER);preview.setPadding(dp(12),dp(12),dp(12),dp(12));content.addView(preview,new LinearLayout.LayoutParams(-1,dp(52)));
   Button rollback=button("استرجاع آخر نسخة محفوظة من هذا الثيم");content.addView(rollback);rollback.setOnClickListener(v->{if(manager.rollback(editing.id)){editing=manager.findTheme(editing.id);status.setText("تم استرجاع النسخة السابقة");applyPreview();}else status.setText("لا توجد نسخة سابقة لهذا الثيم");});
   Button removeTheme=button("حذف الثيم المستورد");content.addView(removeTheme);removeTheme.setOnClickListener(v->{if(manager.remove(editing.id)){editing=manager.current();status.setText("تم حذف الثيم");applyPreview();}else status.setText("لا يمكن حذف محركات الجزيرة الأساسية");});
@@ -495,7 +512,7 @@ public final class MeIslandSettingsActivity extends Activity {
   String l=(String)layout.getSelectedItem(),a=(String)anim.getSelectedItem();
   editing=new MeIslandThemeManager.Theme(editing.id,editing.name,editing.style,l,a,editing.background,editing.accent,
    blur.getProgress(),radius.getProgress()+8,width.getProgress()+120,height.getProgress()+24,editing.expandedHeightDp,animation.getProgress()+100);
-  try{manager.save(editing);manager.select(editing.id);manager.setBlurEnabled(blurSwitch.isChecked());getSharedPreferences("mimax_island_state",0).edit().putBoolean("privacy",privacySwitch.isChecked()).apply();
+  try{manager.save(editing);manager.select(editing.id);manager.setBlurEnabled(blurSwitch.isChecked());manager.setLowPerformanceEnabled(lowPerformanceSwitch.isChecked());manager.setReducedMotionEnabled(reducedMotionSwitch.isChecked());getSharedPreferences("mimax_island_state",0).edit().putBoolean("privacy",privacySwitch.isChecked()).apply();
    Intent i=new Intent(this,MeIslandService.class).setAction(MeIslandService.ACTION_REFRESH);startService(i);status.setText("تم حفظ إعدادات الجزيرة وتطبيقها");applyPreview();
   }catch(Exception e){status.setText("تعذر الحفظ: "+e.getMessage());}
  }

@@ -121,8 +121,9 @@ public final class MiMaxPersonalization {
         }
         view.setIconShape(p.getString("icon_shape","native"));
         view.setLabelTextSizeSp(p.getFloat("label_size",12f));
-        if(p.contains("label_color")) view.setLabelTextColor(p.getInt("label_color",0xffffffff));
-        view.setIconTint(p.getInt("icon_tint",0));
+        if(pkg!=null) view.setLabelTextColor(p.getInt("label_color:"+pkg,p.getInt("label_color",0xffffffff)));
+        else if(p.contains("label_color")) view.setLabelTextColor(p.getInt("label_color",0xffffffff));
+        view.setIconTint(pkg==null?p.getInt("icon_tint",0):p.getInt("icon_tint:"+pkg,p.getInt("icon_tint",0)));
         if(pkg!=null && p.contains("icon_size:"+pkg)) {
             view.setIconSize(Tool.dp2px(p.getInt("icon_size:"+pkg,48)));
             view.requestLayout();
@@ -206,6 +207,8 @@ public final class MiMaxPersonalizationActivity extends Activity {
             Switch home=new Switch(this);home.setText("Hide label on Home");home.setTextColor(-1);home.setChecked(prefs.getBoolean("hide_home:"+pkg,false));card.addView(home);
             Switch drawer=new Switch(this);drawer.setText("Hide label in app drawer");drawer.setTextColor(-1);drawer.setChecked(prefs.getBoolean("hide_drawer:"+pkg,false));card.addView(drawer);
             Switch folder=new Switch(this);folder.setText("Hide label inside folders");folder.setTextColor(-1);folder.setChecked(prefs.getBoolean("hide_folder:"+pkg,false));card.addView(folder);
+            EditText labelColor=new EditText(this);labelColor.setSingleLine(true);labelColor.setTextColor(-1);labelColor.setHint("Label color (#RRGGBB / #AARRGGBB)");int savedLabelColor=prefs.getInt("label_color:"+pkg,0xffffffff);labelColor.setText(String.format(Locale.ROOT,"#%08X",savedLabelColor));card.addView(labelColor);
+            EditText iconTint=new EditText(this);iconTint.setSingleLine(true);iconTint.setTextColor(-1);iconTint.setHint("Icon tint (#RRGGBB; #00000000 = original)");iconTint.setText(String.format(Locale.ROOT,"#%08X",prefs.getInt("icon_tint:"+pkg,0)));card.addView(iconTint);
             TextView iconSizeLabel=new TextView(this);iconSizeLabel.setTextColor(-1);iconSizeLabel.setText("Per-app icon size: "+prefs.getInt("icon_size:"+pkg,48)+" dp");card.addView(iconSizeLabel);
             SeekBar iconSize=new SeekBar(this);iconSize.setMax(40);iconSize.setProgress(Math.max(0,Math.min(40,prefs.getInt("icon_size:"+pkg,48)-32)));card.addView(iconSize);
             iconSize.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar b,int v,boolean u){iconSizeLabel.setText("Per-app icon size: "+(v+32)+" dp");}public void onStartTrackingTouch(SeekBar b){}public void onStopTrackingTouch(SeekBar b){}});
@@ -214,7 +217,15 @@ public final class MiMaxPersonalizationActivity extends Activity {
             Button clearIcon=new Button(this);clearIcon.setText("Clear custom icon");clearIcon.setEnabled(prefs.contains("icon_uri:"+pkg));card.addView(clearIcon);
             clearIcon.setOnClickListener(v->{prefs.edit().remove("icon_uri:"+pkg).apply();clearIcon.setEnabled(false);icon.setText("Choose custom icon");});
             Button save=new Button(this);save.setText("Save "+label);card.addView(save);
-            save.setOnClickListener(v->{String text=alias.getText().toString().trim();prefs.edit().putString("label:"+pkg,text).putBoolean("hide_home:"+pkg,home.isChecked()).putBoolean("hide_drawer:"+pkg,drawer.isChecked()).putBoolean("hide_folder:"+pkg,folder.isChecked()).putInt("icon_size:"+pkg,iconSize.getProgress()+32).apply();Toast.makeText(this,"Saved "+label,Toast.LENGTH_SHORT).show();});
+            save.setOnClickListener(v->{
+                try{
+                    int labelArgb=android.graphics.Color.parseColor(labelColor.getText().toString().trim());
+                    int tintArgb=android.graphics.Color.parseColor(iconTint.getText().toString().trim());
+                    String text=alias.getText().toString().trim();
+                    prefs.edit().putString("label:"+pkg,text).putBoolean("hide_home:"+pkg,home.isChecked()).putBoolean("hide_drawer:"+pkg,drawer.isChecked()).putBoolean("hide_folder:"+pkg,folder.isChecked()).putInt("icon_size:"+pkg,iconSize.getProgress()+32).putInt("label_color:"+pkg,labelArgb).putInt("icon_tint:"+pkg,tintArgb).apply();
+                    Toast.makeText(this,"Saved "+label,Toast.LENGTH_SHORT).show();
+                }catch(Exception e){Toast.makeText(this,"Use a valid color such as #FFFFFFFF",Toast.LENGTH_LONG).show();}
+            });
         }
     }
     @Override protected void onActivityResult(int request,int result,Intent data){
@@ -775,9 +786,8 @@ if "MiMaxPersonalization.applyFolder" not in g:
                     com.benny.openlauncher.mimax.MiMaxPersonalization.applyFolder(getContext(), (AppItemView) view, groupItem);
                 }""", 1)
 # Keep one-item nested groups as folders rather than flattening them into the desktop.
-if "item._location != ItemPosition.Group" not in g:
-    g = g.replace("updateItem(callback, item, itemView);",
-                  "if (item._location != ItemPosition.Group) updateItem(callback, item, itemView);", 1)
+# Keep a single child in a folder when it is itself a folder. The upstream
+# updateItem() helper already refuses to flatten GROUP children because they are not apps.
 # A nested popup is a new overlay instance so the parent folder stays open underneath it.
 if "setOnClosedListener" not in g:
     g = g.replace("    private TextView _textView;", "    private TextView _textView;\n    private Runnable _onClosed;")
