@@ -119,7 +119,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                         "widgets" -> WidgetsPage(widgetController)
                         "extensions" -> ExtensionsPage()
                         "themes" -> ThemesPage(theme,{theme=it;save("theme",it)})
-                        "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},{showAccount=true})
+                        "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},{tab="account"})
                         "account" -> AccountPage { showAccount=false;tab="settings" }
                         else -> HomePage(apps,columns,opacity,{tab="apps"},{tab="settings"})
                     }
