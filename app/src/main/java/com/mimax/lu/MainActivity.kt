@@ -13,6 +13,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -113,7 +116,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                         "themes" -> ThemesPage(theme,{theme=it;save("theme",it)})
                         "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},{showAccount=true})
                         "account" -> AccountPage { showAccount=false;tab="settings" }
-                        else -> HomePage(apps,columns,opacity,{tab="apps"})
+                        else -> HomePage(apps,columns,opacity,{tab="apps"},{tab="settings"})
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -178,9 +181,10 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
     }
 }
-@Composable private fun HomePage(apps:List<AppEntry>,cols:Int,alpha:Float,onAll:()->Unit) {
+@Composable private fun HomePage(apps:List<AppEntry>,cols:Int,alpha:Float,onAll:()->Unit,onSettings:()->Unit) {
     val ctx=LocalContext.current
     val store = remember { LauncherLayoutStore(ctx) }
+    val gestures = remember { GestureSettings(ctx) }
     var folders by remember { mutableStateOf(store.folders()) }
     var selectedForFolder by remember { mutableStateOf<AppEntry?>(null) }
     var openedFolder by remember { mutableStateOf<LauncherLayoutStore.Folder?>(null) }
@@ -208,7 +212,24 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
             showFolderName = true
         }
     }
-    Column {
+    var dragDistance by remember { mutableFloatStateOf(0f) }
+    Column(Modifier.fillMaxSize()
+        .pointerInput(onAll,onSettings) {
+            detectVerticalDragGestures(onVerticalDrag={ change, amount -> dragDistance += amount; change.consume() }, onDragEnd={
+                val action = if (dragDistance < -65f) gestures.actionFor(GestureSettings.Gesture.SWIPE_UP) else if (dragDistance > 65f) gestures.actionFor(GestureSettings.Gesture.SWIPE_DOWN) else GestureSettings.Action.NONE
+                when(action) { GestureSettings.Action.OPEN_APP_DRAWER, GestureSettings.Action.OPEN_SEARCH -> onAll(); GestureSettings.Action.OPEN_SETTINGS -> onSettings(); else -> Unit }
+                dragDistance = 0f
+            })
+        }
+        .pointerInput(onAll,onSettings) {
+            detectTapGestures(onDoubleTap={
+                when(gestures.actionFor(GestureSettings.Gesture.DOUBLE_TAP_HOME)) {
+                    GestureSettings.Action.OPEN_APP_DRAWER, GestureSettings.Action.OPEN_SEARCH -> onAll()
+                    GestureSettings.Action.OPEN_SETTINGS -> onSettings()
+                    else -> Unit
+                }
+            })
+        }) {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             Text("Home",color=Color.White,fontSize=21.sp,fontWeight=FontWeight.SemiBold)
             Text("All apps  →",color=Color(0xFFB9D9FF),modifier=Modifier.clickable{onAll()})
@@ -451,6 +472,12 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         Text("Glass opacity: ${(alpha*100).toInt()}%",color=Color.White.copy(.7f));Slider(value=alpha,onValueChange=onAlpha,valueRange=.05f..0.75f)
         Text("Home grid columns: $cols",color=Color.White.copy(.7f));Slider(value=cols.toFloat(),onValueChange={onCols(it.toInt().coerceIn(3,6))},valueRange=3f..6f,steps=2)
         HorizontalDivider(color=Color.White.copy(.18f),modifier=Modifier.padding(vertical=9.dp))
+        Text("Home gestures",color=Color.White,fontWeight=FontWeight.SemiBold)
+        GestureSettingRow("Double tap",GestureSettings.Gesture.DOUBLE_TAP_HOME,context)
+        GestureSettingRow("Swipe up",GestureSettings.Gesture.SWIPE_UP,context)
+        GestureSettingRow("Swipe down",GestureSettings.Gesture.SWIPE_DOWN,context)
+        Text("Supported actions: open app drawer, search, or settings. Notification shade and quick settings require system privileges and are not exposed by a normal launcher.",color=Color.White.copy(.58f),fontSize=10.sp)
+        HorizontalDivider(color=Color.White.copy(.18f),modifier=Modifier.padding(vertical=9.dp))
         Text("Mi_Max AI connection",color=Color.White,fontWeight=FontWeight.SemiBold)
         GlassInput(endpoint,onEndpoint,"AI API endpoint")
         Spacer(Modifier.height(7.dp));GlassInput(model,onModel,"Model ID")
@@ -466,6 +493,26 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         OutlinedButton(onClick={ importTheme.launch(arrayOf("application/json")) },modifier=Modifier.fillMaxWidth()) { Text("Import theme pack") }
         if (backupMessage.isNotBlank()) Text(backupMessage,color=Color.White.copy(.75f),fontSize=11.sp)
         Button(onClick=onAccount,modifier=Modifier.fillMaxWidth()) { Icon(Icons.Default.Person,null);Spacer(Modifier.width(7.dp));Text("Developer • Account • About") }
+    }
+}
+@Composable private fun GestureSettingRow(label:String,gesture:GestureSettings.Gesture,context:android.content.Context) {
+    val settings = remember { GestureSettings(context) }
+    var action by remember { mutableStateOf(settings.actionFor(gesture)) }
+    var expanded by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(vertical=3.dp),verticalAlignment=Alignment.CenterVertically) {
+        Text(label,color=Color.White,modifier=Modifier.weight(1f),fontSize=13.sp)
+        Box {
+            TextButton(onClick={expanded=true}) { Text(action.name.replace('_',' ').lowercase().replaceFirstChar{it.uppercase()}) }
+            DropdownMenu(expanded=expanded,onDismissRequest={expanded=false}) {
+                listOf(GestureSettings.Action.NONE,GestureSettings.Action.OPEN_APP_DRAWER,GestureSettings.Action.OPEN_SEARCH,GestureSettings.Action.OPEN_SETTINGS).forEach { option ->
+                    DropdownMenuItem(text={Text(option.name.replace('_',' ').lowercase().replaceFirstChar{it.uppercase()})},onClick={
+                        action=option
+                        settings.setAction(gesture,option)
+                        expanded=false
+                    })
+                }
+            }
+        }
     }
 }
 @Composable private fun GlassInput(value:String,onValue:(String)->Unit,hint:String) {
