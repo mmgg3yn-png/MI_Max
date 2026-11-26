@@ -358,8 +358,8 @@ if old in s:
 print("Mi_Max identity + ARM32/ARM64 + developer page + functional permission-gated Me Island timer overlay applied.")
 
 
-// Mi_Max extension packages: declarative-only, path-safe install, compatibility checks,
-// per-extension error logs, and last-known-good rollback. No extension bytecode is executed.
+# Mi_Max extension packages: declarative-only, path-safe install, compatibility checks,
+# per-extension error logs, and last-known-good rollback. No extension bytecode is executed.
 extensions = Path("app/src/main/java/com/benny/openlauncher/mimax/extensions")
 extensions.mkdir(parents=True, exist_ok=True)
 (extensions / "ExtensionRegistry.java").write_text(r'''package com.benny.openlauncher.mimax.extensions;
@@ -435,9 +435,9 @@ public final class ExtensionRegistry {
 ''')
 
 
-// Extension manager UI: import local .zip declarative packs, inspect installed manifests,
-// and roll back to the last-known-good version. Store/network updates are intentionally not
-// represented as complete until a trusted catalogue endpoint and signing keys exist.
+# Extension manager UI: import local .zip declarative packs, inspect installed manifests,
+# and roll back to the last-known-good version. Store/network updates are intentionally not
+# represented as complete until a trusted catalogue endpoint and signing keys exist.
 (src / "ExtensionManagerActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
 
 import android.app.Activity;
