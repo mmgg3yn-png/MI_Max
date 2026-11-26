@@ -30,6 +30,15 @@
             android:exported="false"
             android:label="Me Island settings" />
         <service
+            android:name=".MeIslandNotificationListener"
+            android:label="Me Island notification activities"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+        <service
             android:name=".MeIslandService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
