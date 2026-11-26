@@ -64,4 +64,20 @@ if 'mimax_developer_title' not in source:
     )
 about.write_text(source)
 
-print("Mi_Max branding and developer credit applied.")
+
+# The upstream About screen loads these documents through R.raw.*.
+# Copy them explicitly because the upstream copy task is not wired into this Gradle version.
+import shutil
+raw_dir = Path("app/src/main/res/raw")
+raw_dir.mkdir(parents=True, exist_ok=True)
+for source_name, target_name in [
+    ("LICENSE", "license.md"),
+    ("CONTRIBUTORS.md", "contributors.md"),
+    ("CHANGELOG.md", "changelog.md"),
+]:
+    source_file = Path(source_name)
+    if not source_file.exists():
+        raise SystemExit(f"Required upstream attribution/document file missing: {source_name}")
+    shutil.copyfile(source_file, raw_dir / target_name)
+
+print("Mi_Max branding, developer credit and About resources applied.")
