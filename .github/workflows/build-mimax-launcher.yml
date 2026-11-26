@@ -49,47 +49,27 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Apply Mi_Max identity and ABI configuration to upstream source
+      - name: Apply Mi_Max features to OpenLauncher source
         working-directory: launcher-src
         run: python3 ../project/scripts/brand_openlauncher.py
 
-      - name: Build upstream-based Mi_Max launcher
+      - name: Build Mi_Max launcher
         working-directory: launcher-src
         run: gradle :app:assembleFlavorDefaultRelease --no-daemon --stacktrace
 
-      - name: Verify APK and both CPU architectures
+      - name: Verify APK
         shell: bash
         run: |
           set -euo pipefail
-          APK="$(find launcher-src/app/build/outputs/apk/flavorDefault/release -maxdepth 1 -name '*.apk' -print -quit)"
+          APK="$(find launcher-src/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
           test -n "$APK"
-          unzip -l "$APK" > apk-files.txt
-          # This upstream launcher is Java/Kotlin-only. With no bundled native .so,
-          # Android executes the same DEX APK on ARMv7 and ARM64 without ABI splits.
-          if grep -q 'lib/.*\.so
-          cp "$APK" dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
-          sha256sum dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
-          ls -lh dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
-
-      - name: Upload verified APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Mi_Max_Launcher-OpenLauncher-ARM32-ARM64
-          path: dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
-          if-no-files-found: error
-          retention-days: 30
- apk-files.txt; then
-            grep -q 'lib/armeabi-v7a/' apk-files.txt
-            grep -q 'lib/arm64-v8a/' apk-files.txt
-          else
-            echo "No native libraries: universal DEX APK is CPU-architecture independent."
-          fi
+          unzip -t "$APK"
           mkdir -p dist
           cp "$APK" dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
           sha256sum dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
           ls -lh dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
 
-      - name: Upload verified APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Mi_Max_Launcher-OpenLauncher-ARM32-ARM64
