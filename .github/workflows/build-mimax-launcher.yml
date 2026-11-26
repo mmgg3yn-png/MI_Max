@@ -1,11 +1,15 @@
-name: Build Mi_Max Launcher (Universal ARM32 + ARM64)
+name: Build Mi_Max Launcher from OpenLauncher (ARM32 + ARM64)
 
 on:
   push:
-    paths:
-      - ".github/workflows/build-mimax-launcher.yml"
-      - "scripts/**"
+    branches: [openlauncher-foundation, main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: mimax-openlauncher-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -14,16 +18,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Mi_Max build configuration
+      - name: Checkout Mi_Max integration
         uses: actions/checkout@v4
         with:
           path: project
 
-      - name: Checkout upstream OpenLauncher source
+      - name: Checkout pinned OpenLauncher upstream
         uses: actions/checkout@v4
         with:
           repository: linsmod/openlauncher-2026
-          ref: master
+          ref: 683e11199c67024132287757a55665f56fc6fff6
           path: launcher-src
 
       - name: Set up Java 17
@@ -34,8 +38,6 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
 
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
@@ -45,27 +47,32 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Apply Mi_Max branding and universal ABI configuration
+      - name: Apply Mi_Max identity and ABI configuration to upstream source
         working-directory: launcher-src
         run: python3 ../project/scripts/brand_openlauncher.py
 
-      - name: Build one universal APK
+      - name: Build upstream-based Mi_Max launcher
         working-directory: launcher-src
-        run: gradle :app:assembleFlavorDefaultRelease --no-daemon
+        run: gradle :app:assembleFlavorDefaultRelease --no-daemon --stacktrace
 
-      - name: Verify APK output
+      - name: Verify APK and both CPU architectures
+        shell: bash
         run: |
-          APK="$(find launcher-src/app/build/outputs/apk/flavorDefault/release -maxdepth 1 -name '*.apk' | head -n 1)"
+          set -euo pipefail
+          APK="$(find launcher-src/app/build/outputs/apk/flavorDefault/release -maxdepth 1 -name '*.apk' -print -quit)"
           test -n "$APK"
+          unzip -l "$APK" > apk-files.txt
+          grep -q 'lib/armeabi-v7a/' apk-files.txt
+          grep -q 'lib/arm64-v8a/' apk-files.txt
           mkdir -p dist
-          cp "$APK" dist/Mi_Max_Launcher-universal-ARM32-ARM64.apk
-          ls -lh dist/Mi_Max_Launcher-universal-ARM32-ARM64.apk
-          unzip -l dist/Mi_Max_Launcher-universal-ARM32-ARM64.apk | grep -E 'classes.dex|AndroidManifest.xml' | head
+          cp "$APK" dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
+          sha256sum dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
+          ls -lh dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
 
-      - name: Upload universal APK
+      - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: Mi_Max_Launcher-universal-ARM32-ARM64
-          path: dist/Mi_Max_Launcher-universal-ARM32-ARM64.apk
+          name: Mi_Max_Launcher-OpenLauncher-ARM32-ARM64
+          path: dist/Mi_Max_Launcher-OpenLauncher-ARM32-ARM64.apk
           if-no-files-found: error
           retention-days: 30
