@@ -23,6 +23,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -604,7 +606,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     val importTheme = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) backupMessage = themeManager.import(uri).fold({ "Theme imported: ${it.name}" }, { "Theme import failed: ${it.message}" })
     }
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Text("Settings",color=Color.White,fontSize=26.sp,fontWeight=FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         Text("Appearance & Liquid Glass",color=Color.White,fontWeight=FontWeight.SemiBold)
