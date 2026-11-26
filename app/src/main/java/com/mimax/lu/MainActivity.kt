@@ -2,6 +2,8 @@ package com.mimax.lu
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -488,6 +490,13 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                     }
                     if(extension.requestedPermissions.isNotEmpty()) {
                         Text("Requested permissions: ${extension.requestedPermissions.size} • denied: ${extension.deniedPermissions.size}",color=Color.White.copy(.62f),fontSize=10.sp)
+                        extension.requestedPermissions.forEach { permission ->
+                            Text(permission.substringAfterLast('.'),color=Color.White.copy(.5f),fontSize=9.sp)
+                        }
+                        TextButton(onClick={
+                            val intent=Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(Uri.parse("package:${extension.packageName}"))
+                            context.startActivity(intent)
+                        }) { Text("Manage this extension's permissions") }
                     }
                     extension.lastError?.let { Text("Last error: $it",color=Color(0xFFFFB4AB),fontSize=10.sp) }
                     Row(horizontalArrangement=Arrangement.End,modifier=Modifier.fillMaxWidth()) {
