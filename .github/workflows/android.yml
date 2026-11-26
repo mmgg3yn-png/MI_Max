@@ -48,12 +48,15 @@ jobs:
         run: cargo install cargo-ndk --locked
 
       - name: Build Rust libraries
+        working-directory: native
         run: |
           export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
-          cargo ndk -t armeabi-v7a -t arm64-v8a -o app/src/main/jniLibs build --release --manifest-path native/Cargo.toml
+          cargo ndk -t armeabi-v7a -t arm64-v8a -o ../app/src/main/jniLibs build --release
+          test -s ../app/src/main/jniLibs/armeabi-v7a/libmimax_engine.so
+          test -s ../app/src/main/jniLibs/arm64-v8a/libmimax_engine.so
 
       - name: Build APK
-        run: gradle assembleDebug
+        run: gradle :app:assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
