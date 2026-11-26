@@ -362,8 +362,8 @@ public final class MeIslandService extends Service {
             Build.VERSION.SDK_INT>=26?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT);
-        params.gravity=Gravity.TOP|Gravity.CENTER_HORIZONTAL;params.y=cameraSafeTop()+dp(performance.positionOffset());
         MeIslandThemeManager performance=new MeIslandThemeManager(this);
+        params.gravity=Gravity.TOP|Gravity.CENTER_HORIZONTAL;params.y=cameraSafeTop()+dp(performance.positionOffset());
         if(Build.VERSION.SDK_INT>=31&&performance.blurEnabled()&&!performance.lowPerformanceEnabled()){params.flags|=WindowManager.LayoutParams.FLAG_BLUR_BEHIND;params.setBlurBehindRadius(dp(theme.blur));}
         try{
             wm.addView(root,params);
