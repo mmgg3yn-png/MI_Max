@@ -20,6 +20,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
@@ -240,12 +241,17 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     val store = remember { LauncherLayoutStore(ctx) }
     val gestures = remember { GestureSettings(ctx) }
     var folders by remember { mutableStateOf(store.folders()) }
+    var homePage by remember { mutableIntStateOf(0) }
+    var pageCount by remember { mutableIntStateOf(store.pageCount()) }
     var selectedForFolder by remember { mutableStateOf<AppEntry?>(null) }
     var openedFolder by remember { mutableStateOf<LauncherLayoutStore.Folder?>(null) }
     var folderName by remember { mutableStateOf("Folder") }
     var showFolderName by remember { mutableStateOf(false) }
     val membership = remember(folders, apps) { store.entries().associate { it.packageName to it.folderId } }
     val visibleApps = apps.filter { membership[it.pkg] == null }
+    val appsPerPage = cols * 6
+    val requiredPages = ((visibleApps.size + appsPerPage - 1) / appsPerPage).coerceAtLeast(1)
+    val effectivePageCount = maxOf(pageCount, requiredPages)
     fun longPressApp(app: AppEntry) {
         val first = selectedForFolder
         if (first == null) {
@@ -273,6 +279,14 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 val action = if (dragDistance < -65f) gestures.actionFor(GestureSettings.Gesture.SWIPE_UP) else if (dragDistance > 65f) gestures.actionFor(GestureSettings.Gesture.SWIPE_DOWN) else GestureSettings.Action.NONE
                 when(action) { GestureSettings.Action.OPEN_APP_DRAWER, GestureSettings.Action.OPEN_SEARCH -> onAll(); GestureSettings.Action.OPEN_SETTINGS -> onSettings(); else -> Unit }
                 dragDistance = 0f
+            })
+        }
+        .pointerInput(onAll,onSettings) {
+            var horizontalDistance = 0f
+            detectHorizontalDragGestures(onHorizontalDrag={ change, amount -> horizontalDistance += amount; change.consume() }, onDragEnd={
+                if (horizontalDistance < -65f) homePage = (homePage + 1).coerceAtMost(effectivePageCount - 1)
+                if (horizontalDistance > 65f) homePage = (homePage - 1).coerceAtLeast(0)
+                horizontalDistance = 0f
             })
         }
         .pointerInput(onAll,onSettings) {
@@ -310,7 +324,21 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
             }
         }
         Spacer(Modifier.height(15.dp))
-        Text("Pinned apps",color=Color.White.copy(.8f),fontSize=13.sp)
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
+            Text("Pinned apps",color=Color.White.copy(.8f),fontSize=13.sp)
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                IconButton(onClick={homePage=(homePage-1).coerceAtLeast(0)},enabled=homePage>0) { Icon(Icons.Default.ChevronLeft,contentDescription="Previous page",tint=Color.White) }
+                Text("${homePage+1}/${effectivePageCount}",color=Color.White,fontSize=11.sp)
+                IconButton(onClick={homePage=(homePage+1).coerceAtMost(effectivePageCount-1)},enabled=homePage<effectivePageCount-1) { Icon(Icons.Default.ChevronRight,contentDescription="Next page",tint=Color.White) }
+                IconButton(onClick={
+                    if(pageCount<20) {
+                        pageCount += 1
+                        store.setPageCount(pageCount)
+                        homePage = pageCount - 1
+                    }
+                },enabled=pageCount<20) { Icon(Icons.Default.Add,contentDescription="Add home page",tint=Color.White) }
+            }
+        }
         if (selectedForFolder != null) {
             Text("Selected: ${selectedForFolder!!.name} • hold another app to create a folder",color=Color(0xFFB9D9FF),fontSize=11.sp)
         } else {
@@ -334,7 +362,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
             Spacer(Modifier.height(10.dp))
         }
         LazyVerticalGrid(columns=GridCells.Fixed(cols),modifier=Modifier.heightIn(max=330.dp),contentPadding=PaddingValues(bottom=8.dp),horizontalArrangement=Arrangement.spacedBy(9.dp),verticalArrangement=Arrangement.spacedBy(13.dp)) {
-            items(visibleApps.take(24),key={it.pkg}) { AppIcon(it, iconShape=iconShape, onLongClick={ longPressApp(it) }) }
+            items(visibleApps.drop(homePage * appsPerPage).take(appsPerPage),key={it.pkg}) { AppIcon(it, iconShape=iconShape, onLongClick={ longPressApp(it) }) }
         }
     }
     if (showFolderName && openedFolder != null) {
