@@ -75,6 +75,10 @@ public final class MeIslandThemeManager {
     public void setLowPerformanceEnabled(boolean enabled) { prefs.edit().putBoolean("low_performance",enabled).apply(); }
     public boolean reducedMotionEnabled() { return prefs.getBoolean("reduced_motion",false); }
     public void setReducedMotionEnabled(boolean enabled) { prefs.edit().putBoolean("reduced_motion",enabled).apply(); }
+    public int positionOffset() { return Math.max(0,Math.min(60,prefs.getInt("position_offset",2))); }
+    public void setPositionOffset(int value) { prefs.edit().putInt("position_offset",Math.max(0,Math.min(60,value))).apply(); }
+    public int backgroundAlpha() { return Math.max(30,Math.min(100,prefs.getInt("background_alpha",92))); }
+    public void setBackgroundAlpha(int value) { prefs.edit().putInt("background_alpha",Math.max(30,Math.min(100,value))).apply(); }
     public void save(Theme t) throws Exception {
         String key="pack_"+t.id;
         String previous=prefs.getString(key,null);
@@ -197,6 +201,7 @@ import java.util.*;
 
 public final class MeIslandService extends Service {
     public static final String ACTION_TIMER="com.mimax.launcher.island.TIMER";
+    public static final String ACTION_STOPWATCH="com.mimax.launcher.island.STOPWATCH";
     public static final String ACTION_ACTIVITY="com.mimax.launcher.island.ACTIVITY";
     public static final String ACTION_CLEAR="com.mimax.launcher.island.CLEAR";
     public static final String ACTION_STOP="com.mimax.launcher.island.STOP";
@@ -205,7 +210,7 @@ public final class MeIslandService extends Service {
     public static final String EXTRA_DURATION="duration_ms";
     private static final String CHANNEL="mimax_me_island";
     private static final int NOTIFICATION_ID=7401;
-    private static final String TIMER_ID="mimax.timer";
+    private static final String TIMER_ID="mimax.timer", STOPWATCH_ID="mimax.stopwatch";
 
     private static final class Item {
         String id,title,body; int priority; long expiresAt; PendingIntent pending;
@@ -215,7 +220,7 @@ public final class MeIslandService extends Service {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private WindowManager wm; private LinearLayout root; private TextView title,detail,mark;
     private WindowManager.LayoutParams params; private String shownId="";
-    private boolean expanded=false; private float downX,downY; private long timerEnds=0;
+    private boolean expanded=false; private float downX,downY; private long timerEnds=0,stopwatchStartedAt=0;
     private BroadcastReceiver batteryReceiver;
 
     private final Runnable tick=new Runnable(){@Override public void run(){
@@ -228,6 +233,7 @@ public final class MeIslandService extends Service {
                 getSharedPreferences("mimax_island_state",0).edit().remove("timer_end").apply();}
             else items.put(TIMER_ID,new Item(TIMER_ID,"Timer",format(left),100,0,null));
         }
+        if(stopwatchStartedAt>0){items.put(STOPWATCH_ID,new Item(STOPWATCH_ID,"Stopwatch",formatStopwatch(now-stopwatchStartedAt),96,0,null));}
         render();
         if(!items.isEmpty()) handler.postDelayed(this,500); else {stopForeground(true);stopSelf();}
     }};
@@ -238,13 +244,25 @@ public final class MeIslandService extends Service {
         if(intent==null){
             timerEnds=getSharedPreferences("mimax_island_state",0).getLong("timer_end",0L);
             if(timerEnds>System.currentTimeMillis())items.put(TIMER_ID,new Item(TIMER_ID,"Timer",format(timerEnds-System.currentTimeMillis()),100,0,null));
+            stopwatchStartedAt=getSharedPreferences("mimax_island_state",0).getLong("stopwatch_start",0L);
+            if(stopwatchStartedAt>0)items.put(STOPWATCH_ID,new Item(STOPWATCH_ID,"Stopwatch",formatStopwatch(System.currentTimeMillis()-stopwatchStartedAt),96,0,null));
         }
-        if(ACTION_STOP.equals(action)){handler.removeCallbacks(tick);items.clear();getSharedPreferences("mimax_island_state",0).edit().remove("timer_end").apply();removeView();stopForeground(true);stopSelf();return START_NOT_STICKY;}
+        if(ACTION_STOP.equals(action)){handler.removeCallbacks(tick);items.clear();timerEnds=0;stopwatchStartedAt=0;getSharedPreferences("mimax_island_state",0).edit().remove("timer_end").remove("stopwatch_start").apply();removeView();stopForeground(true);stopSelf();return START_NOT_STICKY;}
         if(ACTION_TIMER.equals(action)){
             long duration=Math.max(1000,Math.min(86400000,intent.getLongExtra(EXTRA_DURATION,60000)));
             timerEnds=System.currentTimeMillis()+duration;
             getSharedPreferences("mimax_island_state",0).edit().putLong("timer_end",timerEnds).apply();
             items.put(TIMER_ID,new Item(TIMER_ID,"Timer",format(duration),100,0,null));
+        } else if(ACTION_STOPWATCH.equals(action)){
+            if(stopwatchStartedAt>0){
+                stopwatchStartedAt=0;
+                getSharedPreferences("mimax_island_state",0).edit().remove("stopwatch_start").apply();
+                items.remove(STOPWATCH_ID);
+            } else {
+                stopwatchStartedAt=System.currentTimeMillis();
+                getSharedPreferences("mimax_island_state",0).edit().putLong("stopwatch_start",stopwatchStartedAt).apply();
+                items.put(STOPWATCH_ID,new Item(STOPWATCH_ID,"Stopwatch","00:00",96,0,null));
+            }
         } else if(ACTION_ACTIVITY.equals(action)){
             String id=intent.getStringExtra(EXTRA_ID); if(id==null) id="activity";
             String t=intent.getStringExtra(EXTRA_TITLE); String b=intent.getStringExtra(EXTRA_BODY);
@@ -253,7 +271,10 @@ public final class MeIslandService extends Service {
             boolean hide=getSharedPreferences("mimax_island_state",0).getBoolean("privacy",false);
             if(hide){t="New activity";b="";}
             items.put(id,new Item(id,t==null?"Activity":t,b==null?"":b,priority,ttl>0?System.currentTimeMillis()+ttl:0,pi));
-        } else if(ACTION_CLEAR.equals(action)){String id=intent.getStringExtra(EXTRA_ID);if(id!=null)items.remove(id);}
+        } else if(ACTION_CLEAR.equals(action)){
+            String id=intent.getStringExtra(EXTRA_ID);
+            if(id!=null){items.remove(id);if(STOPWATCH_ID.equals(id)){stopwatchStartedAt=0;getSharedPreferences("mimax_island_state",0).edit().remove("stopwatch_start").apply();}}
+        }
         else if(ACTION_REFRESH.equals(action)){removeView();}
         if(!items.isEmpty()){
             startForeground(NOTIFICATION_ID,notification());
@@ -297,7 +318,7 @@ public final class MeIslandService extends Service {
         if(params!=null){
             params.width=dp(expanded?Math.max(theme.widthDp,220):theme.widthDp);
             params.height=dp(expanded?theme.expandedHeightDp:theme.compactHeightDp);
-            params.y=cameraSafeTop()+dp(expanded?5:2);
+            params.y=cameraSafeTop()+dp(performance.positionOffset()+(expanded?3:0));
             try{wm.updateViewLayout(root,params);}catch(Exception ignored){}
         }
         if(root!=null){
@@ -341,7 +362,7 @@ public final class MeIslandService extends Service {
             Build.VERSION.SDK_INT>=26?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN|WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT);
-        params.gravity=Gravity.TOP|Gravity.CENTER_HORIZONTAL;params.y=cameraSafeTop()+dp(2);
+        params.gravity=Gravity.TOP|Gravity.CENTER_HORIZONTAL;params.y=cameraSafeTop()+dp(performance.positionOffset());
         MeIslandThemeManager performance=new MeIslandThemeManager(this);
         if(Build.VERSION.SDK_INT>=31&&performance.blurEnabled()&&!performance.lowPerformanceEnabled()){params.flags|=WindowManager.LayoutParams.FLAG_BLUR_BEHIND;params.setBlurBehindRadius(dp(theme.blur));}
         try{
@@ -365,11 +386,18 @@ public final class MeIslandService extends Service {
     }
     private GradientDrawable background(MeIslandThemeManager.Theme t){
         int color=t.style.equals("ltin")?Color.BLACK:(int)t.background;
+        MeIslandThemeManager manager=new MeIslandThemeManager(this);
+        int alpha=Math.round(manager.backgroundAlpha()*2.55f);
+        color=Color.argb(alpha,Color.red(color),Color.green(color),Color.blue(color));
         GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(t.style.equals("ltin")?40:t.cornerDp));
         d.setStroke(dp(1),t.style.equals("his")?Color.argb(80,190,220,255):Color.argb(50,255,255,255));return d;
     }
     private android.view.animation.Interpolator interpolator(String a){if("spring".equals(a))return new OvershootInterpolator(.55f);if("fade_slide".equals(a))return new DecelerateInterpolator();return new AccelerateDecelerateInterpolator();}
     private String format(long ms){long s=(ms+999)/1000;return String.format(Locale.getDefault(),"%02d:%02d",s/60,s%60);}
+    private String formatStopwatch(long ms){
+        long total=Math.max(0,ms)/1000,seconds=total%60,minutes=(total/60)%60,hours=total/3600;
+        return hours>0?String.format(Locale.getDefault(),"%02d:%02d:%02d",hours,minutes,seconds):String.format(Locale.getDefault(),"%02d:%02d",minutes,seconds);
+    }
     private int cameraSafeTop(){
         if(Build.VERSION.SDK_INT>=30){try{android.view.DisplayCutout c=wm.getCurrentWindowMetrics().getWindowInsets().getDisplayCutout();if(c!=null&&!c.getBoundingRects().isEmpty())return c.getBoundingRects().get(0).bottom;}catch(Exception ignored){}}
         int id=getResources().getIdentifier("status_bar_height","dimen","android");return id>0?getResources().getDimensionPixelSize(id):dp(24);
@@ -456,7 +484,7 @@ public final class MeIslandSettingsActivity extends Activity {
  private MeIslandThemeManager manager;
  private MeIslandThemeManager.Theme editing;
  private LinearLayout content;
- private SeekBar width,height,radius,blur,animation,duration;
+ private SeekBar width,height,expandedHeight,radius,blur,animation,duration,position,opacity;
  private Spinner layout,anim;
  private Switch blurSwitch,privacySwitch,lowPerformanceSwitch,reducedMotionSwitch;
  private TextView status,preview;
@@ -482,7 +510,7 @@ public final class MeIslandSettingsActivity extends Activity {
   }
   addText("تخطيط البطاقة",16,true);layout=spinner(new String[]{"pill","wide_card","split","fluid"},editing.layout);content.addView(layout);
   addText("نوع الحركة",16,true);anim=spinner(new String[]{"spring","morph","fade_slide"},editing.animation);content.addView(anim);
-  width=seek("العرض",120,300,editing.widthDp);height=seek("ارتفاع العرض",24,70,editing.compactHeightDp);radius=seek("استدارة الزوايا",8,48,editing.cornerDp);blur=seek("قوة التمويه",0,80,editing.blur);animation=seek("مدة الحركة",100,900,editing.animationMs);duration=seek("مدة المؤقت بالدقائق",1,120,10);
+  width=seek("العرض",120,300,editing.widthDp);height=seek("ارتفاع العرض",24,70,editing.compactHeightDp);expandedHeight=seek("ارتفاع العرض الموسع",60,220,editing.expandedHeightDp);radius=seek("استدارة الزوايا",8,48,editing.cornerDp);blur=seek("قوة التمويه",0,80,editing.blur);animation=seek("مدة الحركة",100,900,editing.animationMs);position=seek("الإزاحة العمودية عن الكاميرا",0,60,manager.positionOffset());opacity=seek("شفافية الجزيرة",30,100,manager.backgroundAlpha());duration=seek("مدة المؤقت بالدقائق",1,120,10);
   blurSwitch=new Switch(this);blurSwitch.setText("تفعيل Blur عند دعم Android");blurSwitch.setChecked(manager.blurEnabled());content.addView(blurSwitch);
   privacySwitch=new Switch(this);privacySwitch.setText("وضع الخصوصية: إخفاء نص الإشعارات");privacySwitch.setChecked(getSharedPreferences("mimax_island_state",0).getBoolean("privacy",false));content.addView(privacySwitch);
   lowPerformanceSwitch=new Switch(this);lowPerformanceSwitch.setText("وضع الأداء المنخفض: تعطيل Blur وتقليل الحركة");lowPerformanceSwitch.setChecked(manager.lowPerformanceEnabled());content.addView(lowPerformanceSwitch);
@@ -494,6 +522,8 @@ public final class MeIslandSettingsActivity extends Activity {
   Button overlay=button("السماح بالظهور فوق التطبيقات");content.addView(overlay);overlay.setOnClickListener(v->{if(Build.VERSION.SDK_INT>=23&&!Settings.canDrawOverlays(this))startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));});
   Button access=button("تفعيل Notification Access");content.addView(access);access.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
   Button timerButton=button("تشغيل المؤقت في الجزيرة");content.addView(timerButton);timerButton.setOnClickListener(v->startTimer());
+  Button stopwatch=button(getSharedPreferences("mimax_island_state",0).contains("stopwatch_start")?"إيقاف ساعة الإيقاف":"تشغيل ساعة الإيقاف");content.addView(stopwatch);
+  stopwatch.setOnClickListener(v->{Intent i=new Intent(this,MeIslandService.class).setAction(MeIslandService.ACTION_STOPWATCH);try{if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);boolean running=!getSharedPreferences("mimax_island_state",0).contains("stopwatch_start");stopwatch.setText(running?"إيقاف ساعة الإيقاف":"تشغيل ساعة الإيقاف");}catch(Exception e){status.setText("تعذر تشغيل ساعة الإيقاف: "+e.getMessage());}});
   Button importButton=button("استيراد ثيم .mt1");content.addView(importButton);importButton.setOnClickListener(v->{Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,PICK_THEME);});
   Button exportButton=button("تصدير الثيم الحالي");content.addView(exportButton);exportButton.setOnClickListener(v->{Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/json").putExtra(Intent.EXTRA_TITLE,"MiMax-Island.mt1");startActivityForResult(i,CREATE_THEME);});
   Button extensions=button("إدارة الإضافات");content.addView(extensions);extensions.setOnClickListener(v->startActivity(new Intent(this,ExtensionManagerActivity.class)));
@@ -511,8 +541,8 @@ public final class MeIslandSettingsActivity extends Activity {
  private void save(){
   String l=(String)layout.getSelectedItem(),a=(String)anim.getSelectedItem();
   editing=new MeIslandThemeManager.Theme(editing.id,editing.name,editing.style,l,a,editing.background,editing.accent,
-   blur.getProgress(),radius.getProgress()+8,width.getProgress()+120,height.getProgress()+24,editing.expandedHeightDp,animation.getProgress()+100);
-  try{manager.save(editing);manager.select(editing.id);manager.setBlurEnabled(blurSwitch.isChecked());manager.setLowPerformanceEnabled(lowPerformanceSwitch.isChecked());manager.setReducedMotionEnabled(reducedMotionSwitch.isChecked());getSharedPreferences("mimax_island_state",0).edit().putBoolean("privacy",privacySwitch.isChecked()).apply();
+   blur.getProgress(),radius.getProgress()+8,width.getProgress()+120,height.getProgress()+24,expandedHeight.getProgress()+60,animation.getProgress()+100);
+  try{manager.save(editing);manager.select(editing.id);manager.setBlurEnabled(blurSwitch.isChecked());manager.setLowPerformanceEnabled(lowPerformanceSwitch.isChecked());manager.setReducedMotionEnabled(reducedMotionSwitch.isChecked());manager.setPositionOffset(position.getProgress());manager.setBackgroundAlpha(opacity.getProgress()+30);getSharedPreferences("mimax_island_state",0).edit().putBoolean("privacy",privacySwitch.isChecked()).apply();
    Intent i=new Intent(this,MeIslandService.class).setAction(MeIslandService.ACTION_REFRESH);startService(i);status.setText("تم حفظ إعدادات الجزيرة وتطبيقها");applyPreview();
   }catch(Exception e){status.setText("تعذر الحفظ: "+e.getMessage());}
  }
