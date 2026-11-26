@@ -1,0 +1,18 @@
+{
+  "format": "mt1",
+  "theme": {
+    "id": "oneplus_sample",
+    "name": "OnePlus Island Sample",
+    "style": "custom",
+    "layout": "split",
+    "animation": "spring",
+    "background": 3993964575,
+    "accent": 4293529600,
+    "blur": 34,
+    "cornerDp": 20,
+    "widthDp": 224,
+    "compactHeightDp": 40,
+    "expandedHeightDp": 124,
+    "animationMs": 360
+  }
+}
