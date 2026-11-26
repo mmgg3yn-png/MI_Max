@@ -919,7 +919,7 @@ anchor='''                Intent intent = new Intent(getActivity(), HideAppsActi
                 intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
                 startActivity(intent);
                 return true;'''
-replacement='''                if (com.benny.openlauncher.mimax.MiMaxPrivacy.lockHiddenApps(getActivity())
+replacement='''                if (com.benny.openlauncher.mimax.MiMaxPrivacy.lockHidden(getActivity())
                         && com.benny.openlauncher.mimax.MiMaxPrivacy.hasPin(getActivity())) {
                     Intent gate = new Intent(getActivity(), com.benny.openlauncher.mimax.MiMaxPrivacyGateActivity.class);
                     gate.putExtra("target", "hidden");
@@ -1116,3 +1116,375 @@ s=s.replace('"mimax_theme_schedule.xml"\n    };','"mimax_theme_schedule.xml",\n 
 backup.write_text(s)
 
 print("Integrated App Library, searchable category groups and temporary Focus Mode with restoration of the prior hidden-app selection.")
+
+
+
+
+# Real Android AppWidgetHost smart stack anchored to the launcher's root overlay.
+(JAVA / "MiMaxSmartStackView.java").write_text(r'''package com.benny.openlauncher.mimax;
+
+import android.appwidget.AppWidgetHostView;
+import android.appwidget.AppWidgetProviderInfo;
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.graphics.drawable.GradientDrawable;
+import android.util.AttributeSet;
+import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import com.benny.openlauncher.activity.HomeActivity;
+import org.json.JSONArray;
+import java.util.*;
+
+public final class MiMaxSmartStackView extends LinearLayout {
+ private static final String PREFS="mimax_smart_widgets";
+ private static final int ROTATE_MS=15000;
+ private final TextView header;
+ private final FrameLayout widgetFrame;
+ private final android.os.Handler handler=new android.os.Handler(android.os.Looper.getMainLooper());
+ private boolean expanded=false;
+ private int index=0;
+ private float downX,downY;
+ private final Runnable autoRotate=new Runnable(){public void run(){if(expanded){cycle(1);handler.postDelayed(this,ROTATE_MS);}}};
+ public MiMaxSmartStackView(Context c,AttributeSet a){super(c,a);setOrientation(VERTICAL);setPadding(dp(8),dp(6),dp(8),dp(8));
+  GradientDrawable bg=new GradientDrawable();bg.setColor(0xee182230);bg.setCornerRadius(dp(22));bg.setStroke(dp(1),0x557eb5e8);setBackground(bg);setElevation(dp(12));
+  header=new TextView(c);header.setTextColor(Color.WHITE);header.setTextSize(13);header.setGravity(Gravity.CENTER);header.setText("Smart Stack +");header.setPadding(dp(8),dp(8),dp(8),dp(8));addView(header,new LayoutParams(-1,dp(34)));
+  widgetFrame=new FrameLayout(c);addView(widgetFrame,new LayoutParams(-1,dp(142)));widgetFrame.setVisibility(GONE);
+  header.setOnClickListener(v->toggle());
+  header.setOnLongClickListener(v->{openManager();return true;});
+  header.setOnTouchListener((v,e)->{
+   if(e.getAction()==MotionEvent.ACTION_DOWN){downX=e.getRawX();downY=e.getRawY();return true;}
+   if(e.getAction()==MotionEvent.ACTION_UP){
+    float dx=e.getRawX()-downX,dy=e.getRawY()-downY;
+    if(Math.abs(dx)>dp(28)&&Math.abs(dx)>Math.abs(dy)){cycle(dx<0?1:-1);return true;}
+    if(Math.abs(dy)>dp(28)){if(dy<0)expand();else collapse();return true;}
+    v.performClick();return true;
+   }return true;
+  });
+  post(this::refreshWidgets);
+ }
+ private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+ private int[] ids(){
+  try{JSONArray a=new JSONArray(getContext().getSharedPreferences(PREFS,0).getString("ids","[]"));int[] out=new int[a.length()];for(int i=0;i<a.length();i++)out[i]=a.getInt(i);return out;}
+  catch(Exception e){return new int[0];}
+ }
+ public void refreshWidgets(){
+  int[] all=ids();
+  if(all.length==0){header.setText("Smart Stack +");widgetFrame.removeAllViews();if(expanded)collapse();return;}
+  index=((index%all.length)+all.length)%all.length;
+  if(!expanded){header.setText("Smart Stack  •  "+all.length+" widgets");return;}
+  header.setText("Smart Stack  •  "+(index+1)+"/"+all.length+"  ↻");
+  widgetFrame.removeAllViews();
+  if(HomeActivity._appWidgetHost==null||HomeActivity._appWidgetManager==null){TextView wait=new TextView(getContext());wait.setText("Widget host is starting…");wait.setTextColor(Color.WHITE);widgetFrame.addView(wait);return;}
+  int id=all[index];AppWidgetProviderInfo info=HomeActivity._appWidgetManager.getAppWidgetInfo(id);
+  if(info==null){TextView gone=new TextView(getContext());gone.setText("Widget unavailable — long press to manage");gone.setTextColor(Color.WHITE);widgetFrame.addView(gone);return;}
+  try{
+   AppWidgetHostView view=HomeActivity._appWidgetHost.createView(getContext(),id,info);
+   view.setAppWidget(id,info);
+   widgetFrame.addView(view,new FrameLayout.LayoutParams(-1,-1));
+  }catch(Exception e){TextView error=new TextView(getContext());error.setText("Could not load this widget");error.setTextColor(Color.WHITE);widgetFrame.addView(error);}
+ }
+ private void toggle(){if(expanded){cycle(1);}else expand();}
+ private void expand(){
+  if(ids().length==0){openManager();return;}
+  expanded=true;widgetFrame.setVisibility(VISIBLE);LayoutParams p=(LayoutParams)getLayoutParams();if(p!=null){p.height=dp(188);setLayoutParams(p);}
+  refreshWidgets();handler.removeCallbacks(autoRotate);handler.postDelayed(autoRotate,ROTATE_MS);
+ }
+ private void collapse(){expanded=false;handler.removeCallbacks(autoRotate);widgetFrame.setVisibility(GONE);LayoutParams p=(LayoutParams)getLayoutParams();if(p!=null){p.height=dp(46);setLayoutParams(p);}refreshWidgets();}
+ private void cycle(int direction){int[] all=ids();if(all.length==0){openManager();return;}index=(index+direction+all.length)%all.length;if(!expanded)expand();else refreshWidgets();}
+ private void openManager(){try{getContext().startActivity(new Intent(getContext(),MiMaxSmartStackActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));}catch(Exception ignored){}}
+ @Override protected void onAttachedToWindow(){super.onAttachedToWindow();post(this::refreshWidgets);}
+ @Override protected void onDetachedFromWindow(){handler.removeCallbacksAndMessages(null);super.onDetachedFromWindow();}
+}
+''')
+
+(JAVA / "MiMaxSmartStackActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+
+import android.app.Activity;
+import android.appwidget.AppWidgetManager;
+import android.appwidget.AppWidgetProviderInfo;
+import android.content.Intent;
+import android.os.Bundle;
+import android.view.Gravity;
+import android.widget.*;
+import com.benny.openlauncher.activity.HomeActivity;
+import org.json.JSONArray;
+import java.util.*;
+
+public final class MiMaxSmartStackActivity extends Activity {
+ private static final int PICK=9211,CONFIGURE=9212;
+ private static final String PREFS="mimax_smart_widgets";
+ private int pendingId=-1;
+ private LinearLayout list;
+ private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+ @Override protected void onCreate(Bundle b){super.onCreate(b);
+  LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(18),dp(18),dp(18),dp(24));root.setBackgroundColor(0xff101722);
+  TextView title=new TextView(this);title.setText("Smart Widget Stack");title.setTextSize(23);title.setTextColor(-1);root.addView(title);
+  TextView note=new TextView(this);note.setText("Add real Android widgets from installed providers. The home-screen stack can be expanded, swiped between widgets, or automatically rotate every 15 seconds.");note.setTextColor(0xffc4d0df);note.setPadding(0,dp(8),0,dp(12));root.addView(note);
+  Button add=new Button(this);add.setText("Add Android widget");root.addView(add);add.setOnClickListener(v->pickWidget());
+  list=new LinearLayout(this);list.setOrientation(1);root.addView(list,new LinearLayout.LayoutParams(-1,0,1));
+  Button refresh=new Button(this);refresh.setText("Refresh Smart Stack on home screen");root.addView(refresh);refresh.setOnClickListener(v->{refreshHome();Toast.makeText(this,"Smart Stack refreshed",Toast.LENGTH_SHORT).show();});
+  setContentView(root);refreshList();
+ }
+ private int[] ids(){try{JSONArray a=new JSONArray(getSharedPreferences(PREFS,0).getString("ids","[]"));int[] out=new int[a.length()];for(int i=0;i<a.length();i++)out[i]=a.getInt(i);return out;}catch(Exception e){return new int[0];}}
+ private void save(int[] values){JSONArray a=new JSONArray();for(int id:values)a.put(id);getSharedPreferences(PREFS,0).edit().putString("ids",a.toString()).apply();}
+ private void pickWidget(){
+  if(HomeActivity._appWidgetHost==null||HomeActivity._appWidgetManager==null){Toast.makeText(this,"Open the launcher home screen first",Toast.LENGTH_LONG).show();return;}
+  pendingId=HomeActivity._appWidgetHost.allocateAppWidgetId();
+  Intent i=new Intent("android.appwidget.action.APPWIDGET_PICK");i.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,pendingId);
+  try{startActivityForResult(i,PICK);}catch(Exception e){HomeActivity._appWidgetHost.deleteAppWidgetId(pendingId);pendingId=-1;Toast.makeText(this,"Android widget picker is unavailable",Toast.LENGTH_LONG).show();}
+ }
+ private void savePending(){
+  if(pendingId<0)return;int[] old=ids();int[] next=Arrays.copyOf(old,old.length+1);next[old.length]=pendingId;save(next);pendingId=-1;refreshList();refreshHome();
+ }
+ @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);
+  if(request==PICK){
+   if(result!=RESULT_OK){if(pendingId>=0)HomeActivity._appWidgetHost.deleteAppWidgetId(pendingId);pendingId=-1;return;}
+   if(data!=null)pendingId=data.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,pendingId);
+   AppWidgetProviderInfo info=HomeActivity._appWidgetManager.getAppWidgetInfo(pendingId);
+   if(info!=null&&info.configure!=null){
+    Intent config=new Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).setComponent(info.configure).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,pendingId);
+    startActivityForResult(config,CONFIGURE);
+   }else savePending();
+  }else if(request==CONFIGURE){if(result==RESULT_OK)savePending();else if(pendingId>=0)HomeActivity._appWidgetHost.deleteAppWidgetId(pendingId);pendingId=-1;}
+ }
+ private void refreshList(){
+  list.removeAllViews();int[] all=ids();
+  if(all.length==0){TextView empty=new TextView(this);empty.setText("No widgets in the stack yet.");empty.setTextColor(-1);list.addView(empty);return;}
+  for(int id:all){
+   AppWidgetProviderInfo info=HomeActivity._appWidgetManager==null?null:HomeActivity._appWidgetManager.getAppWidgetInfo(id);
+   String label=info==null?"Unavailable widget #"+id:info.loadLabel(getPackageManager()).toString();
+   LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(0,dp(6),0,dp(6));list.addView(row);
+   TextView name=new TextView(this);name.setText(label);name.setTextColor(-1);name.setTextSize(15);row.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+   Button remove=new Button(this);remove.setText("Remove");row.addView(remove);remove.setOnClickListener(v->removeWidget(id));
+  }
+ }
+ private void removeWidget(int id){
+  int[] old=ids();ArrayList<Integer> keep=new ArrayList<>();for(int x:old)if(x!=id)keep.add(x);
+  int[] next=new int[keep.size()];for(int i=0;i<next.length;i++)next[i]=keep.get(i);save(next);
+  if(HomeActivity._appWidgetHost!=null)HomeActivity._appWidgetHost.deleteAppWidgetId(id);
+  refreshList();refreshHome();
+ }
+ private void refreshHome(){
+  if(HomeActivity._launcher!=null){MiMaxSmartStackView view=HomeActivity._launcher.findViewById(com.benny.openlauncher.R.id.mimax_smart_stack);if(view!=null)view.refreshWidgets();}
+ }
+}
+''')
+
+layout=BASE / "res/layout/activity_home.xml"
+xml=layout.read_text()
+if "MiMaxSmartStackView" not in xml:
+    xml=xml.replace("</FrameLayout>",'''    <com.benny.openlauncher.mimax.MiMaxSmartStackView
+        android:id="@+id/mimax_smart_stack"
+        android:layout_width="232dp"
+        android:layout_height="46dp"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="10dp" />
+</FrameLayout>''',1)
+layout.write_text(xml)
+
+manifest=BASE / "AndroidManifest.xml"
+m=manifest.read_text()
+if "com.benny.openlauncher.mimax.MiMaxSmartStackActivity" not in m:
+    m=m.replace("</application>",'''        <activity android:name="com.benny.openlauncher.mimax.MiMaxSmartStackActivity" android:exported="false" android:label="Smart Widget Stack" />
+    </application>''',1)
+manifest.write_text(m)
+
+master=BASE / "res/xml/preferences_master.xml"
+p=master.read_text()
+if "mimax_smart_stack" not in p:
+    entry='''    <PreferenceCategory android:title="Mi_Max Widgets">
+        <Preference android:key="mimax_smart_stack" android:title="Smart Widget Stack"
+            android:summary="Add and rotate real Android widgets in a home-screen stack">
+            <intent android:targetPackage="com.mimax.launcher" android:targetClass="com.benny.openlauncher.mimax.MiMaxSmartStackActivity" />
+        </Preference>
+    </PreferenceCategory>
+'''
+    p=p.replace("</PreferenceScreen>",entry+"</PreferenceScreen>",1)
+master.write_text(p)
+
+backup=Path("app/src/main/java/com/benny/openlauncher/util/BackupHelper.java")
+s=backup.read_text()
+s=s.replace('"mimax_privacy.xml"\n    };','"mimax_privacy.xml",\n        "mimax_smart_widgets.xml"\n    };')
+backup.write_text(s)
+
+print("Added a real AppWidgetHost smart stack overlay on the launcher home screen, provider picker/configuration, swipe/tap cycling and timed rotation.")
+
+
+
+
+# Native Mi_Max assistant with a live OpenRouter free-model catalogue.
+(JAVA / "MiMaxAiActivity.java").write_text(r'''package com.benny.openlauncher.mimax;
+
+import android.app.Activity;
+import android.os.Build;
+import android.os.Bundle;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
+import android.text.InputType;
+import android.view.Gravity;
+import android.widget.*;
+import android.content.*;
+import android.util.Base64;
+import org.json.*;
+import java.io.*;
+import java.net.*;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
+import java.util.*;
+import java.util.concurrent.*;
+import javax.crypto.*;
+import javax.crypto.spec.GCMParameterSpec;
+
+public final class MiMaxAiActivity extends Activity {
+ private static final String FILE="mimax_ai",ALIAS="mimax_openrouter_key";
+ private static final String BASE="https://openrouter.ai/api/v1";
+ private final ExecutorService worker=Executors.newSingleThreadExecutor();
+ private final ArrayList<JSONObject> history=new ArrayList<>();
+ private EditText keyInput,prompt;
+ private Spinner models;
+ private TextView output,status,tempLabel;
+ private SeekBar temperature;
+ private ArrayAdapter<String> adapter;
+ private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+ @Override protected void onCreate(Bundle b){super.onCreate(b);
+  LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(16),dp(16),dp(16),dp(16));root.setBackgroundColor(0xff101722);
+  TextView title=new TextView(this);title.setText("Mi_Max AI Assistant");title.setTextSize(23);title.setTextColor(-1);root.addView(title);
+  TextView privacy=new TextView(this);privacy.setText("Requests are sent to OpenRouter over HTTPS. Your API key is stored locally using Android Keystore encryption on Android 6.0 and newer.");privacy.setTextColor(0xffc0ccda);privacy.setPadding(0,dp(6),0,dp(10));root.addView(privacy);
+  keyInput=new EditText(this);keyInput.setSingleLine(true);keyInput.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);keyInput.setHint(hasKey()?"API key saved — enter to replace":"OpenRouter API key");keyInput.setTextColor(-1);root.addView(keyInput);
+  Button saveKey=new Button(this);saveKey.setText("Save API key securely");root.addView(saveKey);saveKey.setOnClickListener(v->saveKey());
+  LinearLayout modelRow=new LinearLayout(this);modelRow.setGravity(Gravity.CENTER_VERTICAL);root.addView(modelRow);
+  models=new Spinner(this);adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new ArrayList<>());models.setAdapter(adapter);modelRow.addView(models,new LinearLayout.LayoutParams(0,-2,1));
+  Button load=new Button(this);load.setText("Load free models");modelRow.addView(load);load.setOnClickListener(v->loadModels());
+  tempLabel=new TextView(this);tempLabel.setTextColor(-1);root.addView(tempLabel);
+  temperature=new SeekBar(this);temperature.setMax(100);temperature.setProgress(Math.round(getSharedPreferences(FILE,0).getFloat("temperature",0.7f)*100));root.addView(temperature);
+  temperature.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar s,int p,boolean u){tempLabel.setText(String.format(Locale.US,"Temperature: %.2f",p/100f));getSharedPreferences(FILE,0).edit().putFloat("temperature",p/100f).apply();}public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){}});
+  ScrollView transcriptScroll=new ScrollView(this);output=new TextView(this);output.setTextColor(0xffe5edf5);output.setTextSize(14);output.setPadding(dp(10),dp(10),dp(10),dp(10));transcriptScroll.addView(output);transcriptScroll.setBackgroundColor(0xff202b39);root.addView(transcriptScroll,new LinearLayout.LayoutParams(-1,0,1));
+  prompt=new EditText(this);prompt.setTextColor(-1);prompt.setHintTextColor(0xff98a8ba);prompt.setHint("Ask Mi_Max AI");prompt.setMinLines(2);prompt.setGravity(Gravity.TOP);root.addView(prompt);
+  Button send=new Button(this);send.setText("Send");root.addView(send);send.setOnClickListener(v->sendMessage());
+  status=new TextView(this);status.setTextColor(0xffb8d9ff);root.addView(status);
+  setContentView(root);updateTempLabel();restoreModel();
+ }
+ private void updateTempLabel(){tempLabel.setText(String.format(Locale.US,"Temperature: %.2f",temperature.getProgress()/100f));}
+ private boolean hasKey(){return getSharedPreferences(FILE,0).contains("key_cipher")||getSharedPreferences(FILE,0).contains("key_legacy");}
+ private void saveKey(){
+  String key=keyInput.getText().toString().trim();if(key.isEmpty()){status.setText("Enter your OpenRouter API key");return;}
+  try{
+   if(Build.VERSION.SDK_INT>=23){
+    KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);
+    if(!ks.containsAlias(ALIAS)){KeyGenerator gen=KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore");gen.init(new KeyGenParameterSpec.Builder(ALIAS,KeyProperties.PURPOSE_ENCRYPT|KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).setRandomizedEncryptionRequired(true).build());gen.generateKey();}
+    SecretKey secret=(SecretKey)ks.getKey(ALIAS,null);Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,secret);
+    byte[] encrypted=cipher.doFinal(key.getBytes(StandardCharsets.UTF_8));
+    getSharedPreferences(FILE,0).edit().putString("key_iv",Base64.encodeToString(cipher.getIV(),Base64.NO_WRAP)).putString("key_cipher",Base64.encodeToString(encrypted,Base64.NO_WRAP)).remove("key_legacy").apply();
+   }else getSharedPreferences(FILE,0).edit().putString("key_legacy",key).apply();
+   keyInput.setText("");keyInput.setHint("API key saved");status.setText("API key saved locally");
+  }catch(Exception e){status.setText("Could not secure API key: "+e.getMessage());}
+ }
+ private String readKey(){
+  try{
+   if(Build.VERSION.SDK_INT<23)return getSharedPreferences(FILE,0).getString("key_legacy",null);
+   String iv=getSharedPreferences(FILE,0).getString("key_iv",null),data=getSharedPreferences(FILE,0).getString("key_cipher",null);
+   if(iv==null||data==null)return null;
+   KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);SecretKey secret=(SecretKey)ks.getKey(ALIAS,null);
+   Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,secret,new GCMParameterSpec(128,Base64.decode(iv,Base64.NO_WRAP)));
+   return new String(cipher.doFinal(Base64.decode(data,Base64.NO_WRAP)),StandardCharsets.UTF_8);
+  }catch(Exception e){return null;}
+ }
+ private void restoreModel(){
+  String m=getSharedPreferences(FILE,0).getString("model","");
+  if(!m.isEmpty()){adapter.add(m);adapter.notifyDataSetChanged();}
+ }
+ private void loadModels(){
+  status.setText("Loading OpenRouter free models…");
+  worker.execute(()->{
+   try{
+    JSONObject response=request("GET",BASE+"/models",null,null);
+    JSONArray data=response.optJSONArray("data");ArrayList<String> free=new ArrayList<>();
+    if(data!=null)for(int i=0;i<data.length();i++){
+     JSONObject item=data.optJSONObject(i);if(item==null)continue;
+     String id=item.optString("id","");JSONObject price=item.optJSONObject("pricing");
+     boolean isFree=id.endsWith(":free");
+     if(price!=null){double in=parsePrice(price.optString("prompt","-1")),out=parsePrice(price.optString("completion","-1"));isFree=isFree||(in==0.0&&out==0.0);}
+     if(isFree&&!id.isEmpty())free.add(id);
+    }
+    Collections.sort(free);
+    runOnUiThread(()->{
+     String selected=getSharedPreferences(FILE,0).getString("model","");
+     adapter.clear();adapter.addAll(free);adapter.notifyDataSetChanged();
+     int i=free.indexOf(selected);if(i>=0)models.setSelection(i);
+     status.setText("Loaded "+free.size()+" free models");
+    });
+   }catch(Exception e){runOnUiThread(()->status.setText("Model list error: "+e.getMessage()));}
+  });
+ }
+ private double parsePrice(String s){try{return Double.parseDouble(s);}catch(Exception e){return -1;}}
+ private void sendMessage(){
+  String text=prompt.getText().toString().trim();if(text.isEmpty())return;
+  String key=readKey();if(key==null||key.isEmpty()){status.setText("Save your OpenRouter API key first");return;}
+  Object chosen=models.getSelectedItem();String model=chosen==null?"":chosen.toString();
+  if(model.isEmpty()){status.setText("Load and select a free model first");return;}
+  prompt.setText("");append("You",text);status.setText("Thinking…");
+  worker.execute(()->{
+   try{
+    history.add(new JSONObject().put("role","user").put("content",text));
+    while(history.size()>20)history.remove(0);
+    JSONArray messages=new JSONArray();for(JSONObject m:history)messages.put(m);
+    JSONObject body=new JSONObject().put("model",model).put("messages",messages).put("temperature",temperature.getProgress()/100.0).put("max_tokens",1024);
+    JSONObject result=request("POST",BASE+"/chat/completions",body,key);
+    JSONArray choices=result.optJSONArray("choices");if(choices==null||choices.length()==0)throw new IOException("The model returned no answer");
+    String answer=choices.getJSONObject(0).getJSONObject("message").optString("content","");
+    if(answer.isEmpty())throw new IOException("The model returned an empty answer");
+    history.add(new JSONObject().put("role","assistant").put("content",answer));
+    getSharedPreferences(FILE,0).edit().putString("model",model).apply();
+    runOnUiThread(()->{append("Mi_Max",answer);status.setText("Model: "+model);});
+   }catch(Exception e){runOnUiThread(()->status.setText("Request failed: "+e.getMessage()));}
+  });
+ }
+ private JSONObject request(String method,String address,JSONObject body,String key)throws Exception{
+  HttpURLConnection connection=(HttpURLConnection)new URL(address).openConnection();
+  connection.setRequestMethod(method);connection.setConnectTimeout(15000);connection.setReadTimeout(45000);connection.setRequestProperty("Accept","application/json");
+  if(key!=null){connection.setRequestProperty("Authorization","Bearer "+key);connection.setRequestProperty("HTTP-Referer","https://github.com/mmgg3yn-png/MI_Max");connection.setRequestProperty("X-Title","Mi_Max Launcher");}
+  if(body!=null){connection.setDoOutput(true);connection.setRequestProperty("Content-Type","application/json");try(OutputStream out=connection.getOutputStream()){out.write(body.toString().getBytes(StandardCharsets.UTF_8));}}
+  int code=connection.getResponseCode();InputStream stream=code>=200&&code<300?connection.getInputStream():connection.getErrorStream();
+  StringBuilder json=new StringBuilder();if(stream!=null)try(BufferedReader br=new BufferedReader(new InputStreamReader(stream,StandardCharsets.UTF_8))){String line;while((line=br.readLine())!=null)json.append(line);}
+  connection.disconnect();
+  JSONObject parsed=new JSONObject(json.toString());
+  if(code<200||code>=300){JSONObject err=parsed.optJSONObject("error");throw new IOException(err==null?"HTTP "+code:err.optString("message","HTTP "+code));}
+  return parsed;
+ }
+ private void append(String who,String text){output.append("\n"+who+":\n"+text+"\n");}
+ @Override protected void onDestroy(){worker.shutdownNow();super.onDestroy();}
+}
+''')
+
+manifest=BASE / "AndroidManifest.xml"
+m=manifest.read_text()
+if "com.benny.openlauncher.mimax.MiMaxAiActivity" not in m:
+    m=m.replace("</application>",'''        <activity android:name="com.benny.openlauncher.mimax.MiMaxAiActivity" android:exported="false" android:label="Mi_Max AI Assistant" />
+    </application>''',1)
+manifest.write_text(m)
+
+master=BASE / "res/xml/preferences_master.xml"
+p=master.read_text()
+if "mimax_ai_assistant" not in p:
+    entry='''    <PreferenceCategory android:title="Mi_Max AI">
+        <Preference android:key="mimax_ai_assistant" android:title="Mi_Max AI Assistant"
+            android:summary="Choose a real OpenRouter free model and chat from the launcher">
+            <intent android:targetPackage="com.mimax.launcher" android:targetClass="com.benny.openlauncher.mimax.MiMaxAiActivity" />
+        </Preference>
+    </PreferenceCategory>
+'''
+    p=p.replace("</PreferenceScreen>",entry+"</PreferenceScreen>",1)
+master.write_text(p)
+
+backup=Path("app/src/main/java/com/benny/openlauncher/util/BackupHelper.java")
+s=backup.read_text()
+s=s.replace('"mimax_smart_widgets.xml"\n    };','"mimax_smart_widgets.xml",\n        "mimax_ai.xml"\n    };')
+backup.write_text(s)
+
+print("Added Mi_Max AI chat, encrypted local API key on supported Android versions, live catalogue of actual free OpenRouter models and temperature setting.")
