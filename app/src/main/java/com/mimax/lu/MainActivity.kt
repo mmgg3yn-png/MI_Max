@@ -328,6 +328,19 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     }
 }
 @Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,onAccount:()->Unit) {
+    val context = LocalContext.current
+    var backupMessage by remember { mutableStateOf("") }
+    val backupManager = remember { LauncherBackupManager(context) }
+    val themeManager = remember { ThemePackManager(context) }
+    val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) backupMessage = backupManager.exportTo(uri).fold({ "Backup saved." }, { "Backup failed: ${it.message}" })
+    }
+    val importBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) backupMessage = backupManager.restoreFrom(uri).fold({ "Backup restored. Restart launcher to refresh all screens." }, { "Restore failed: ${it.message}" })
+    }
+    val importTheme = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) backupMessage = themeManager.import(uri).fold({ "Theme imported: ${it.name}" }, { "Theme import failed: ${it.message}" })
+    }
     Column(Modifier.fillMaxSize()) {
         Text("Settings",color=Color.White,fontSize=26.sp,fontWeight=FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
@@ -342,6 +355,14 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         Spacer(Modifier.height(7.dp));GlassInput(key,onKey,"API key (stored locally)")
         Text("This stores connection details; live AI chat/API validation is not yet wired in this build.",color=Color.White.copy(.6f),fontSize=11.sp)
         Spacer(Modifier.height(9.dp))
+        HorizontalDivider(color=Color.White.copy(.18f),modifier=Modifier.padding(vertical=9.dp))
+        Text("Backup & themes",color=Color.White,fontWeight=FontWeight.SemiBold)
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick={ exportBackup.launch("Mi_Max_Launcher_Backup.json") },modifier=Modifier.weight(1f)) { Text("Export backup") }
+            OutlinedButton(onClick={ importBackup.launch(arrayOf("application/json")) },modifier=Modifier.weight(1f)) { Text("Restore backup") }
+        }
+        OutlinedButton(onClick={ importTheme.launch(arrayOf("application/json")) },modifier=Modifier.fillMaxWidth()) { Text("Import theme pack") }
+        if (backupMessage.isNotBlank()) Text(backupMessage,color=Color.White.copy(.75f),fontSize=11.sp)
         Button(onClick=onAccount,modifier=Modifier.fillMaxWidth()) { Icon(Icons.Default.Person,null);Spacer(Modifier.width(7.dp));Text("Developer • Account • About") }
     }
 }
