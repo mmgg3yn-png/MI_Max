@@ -281,7 +281,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 dragDistance = 0f
             })
         }
-        .pointerInput(onAll,onSettings) {
+        .pointerInput(onAll,onSettings,effectivePageCount) {
             var horizontalDistance = 0f
             detectHorizontalDragGestures(onHorizontalDrag={ change, amount -> horizontalDistance += amount; change.consume() }, onDragEnd={
                 if (horizontalDistance < -65f) homePage = (homePage + 1).coerceAtMost(effectivePageCount - 1)
