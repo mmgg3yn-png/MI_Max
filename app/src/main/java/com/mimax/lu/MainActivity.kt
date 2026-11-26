@@ -49,9 +49,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
@@ -139,8 +136,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     fun save(k:String,v:Any) { prefs.edit().apply {
         when(v){ is Float->putFloat(k,v); is Int->putInt(k,v); is String->putString(k,v) }
     }.apply() }
-    MaterialTheme(colorScheme=darkColorScheme(primary=customTheme?.let { Color(it.accent) } ?: Color(0xFFB9D9FF),surface=Color(0xFF202B3A),background=Color(0xFF0B111B))) {
-        CompositionLocalProvider(LocalTextStyle provides TextStyle.Default.copy(fontFamily=customFont ?: FontFamily.Default)) {
+    MaterialTheme(colorScheme=darkColorScheme(primary=customTheme?.let { Color(it.accent) } ?: Color(0xFFB9D9FF),surface=Color(0xFF202B3A),background=Color(0xFF0B111B)), typography=Typography(fontFamily=customFont ?: FontFamily.Default)) {
         Box(Modifier.fillMaxSize()) {
             if (wallpaperBitmap != null) {
                 Image(bitmap=wallpaperBitmap,contentDescription=null,modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
@@ -177,7 +173,6 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 Spacer(Modifier.height(9.dp))
             }
             }
-        }
         }
         if(showAccount) AccountDialog(onDismiss={showAccount=false})
     }
