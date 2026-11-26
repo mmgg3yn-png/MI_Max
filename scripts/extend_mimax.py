@@ -347,7 +347,7 @@ public final class MeIslandNotificationListener extends NotificationListenerServ
         else if(Notification.CATEGORY_TRANSPORT.equals(category)){priority=75;ttl=0;}
         else if(Notification.CATEGORY_NAVIGATION.equals(category)){priority=65;ttl=0;}
         else if(Notification.CATEGORY_PROGRESS.equals(category)){priority=55;ttl=0;}
-        else if(n.flags&Notification.FLAG_ONGOING_EVENT)!=0){priority=45;ttl=0;}
+        else if((n.flags & Notification.FLAG_ONGOING_EVENT)!=0){priority=45;ttl=0;}
         Intent i=new Intent(this,MeIslandService.class).setAction(MeIslandService.ACTION_ACTIVITY);
         i.putExtra(MeIslandService.EXTRA_ID,sbn.getPackageName()+":"+sbn.getId());
         i.putExtra(MeIslandService.EXTRA_TITLE,title==null?"Activity":title.toString());
