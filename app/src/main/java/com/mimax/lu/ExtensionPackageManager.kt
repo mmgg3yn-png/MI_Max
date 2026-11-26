@@ -28,7 +28,8 @@ class ExtensionPackageManager(private val context: Context) {
         val enabled: Boolean,
         val lastError: String?,
         val requestedPermissions: List<String>,
-        val deniedPermissions: List<String>
+        val deniedPermissions: List<String>,
+        val missingDependencies: List<String>
     )
 
     private val registry = ExtensionRegistry(context)
@@ -47,6 +48,11 @@ class ExtensionPackageManager(private val context: Context) {
             }.getOrNull() ?: return@mapNotNull null
             val versionCode = packageInfo.longVersionCode.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
             val minVersion = meta.getInt(META_MIN_LAUNCHER_VERSION, 1)
+            val requiredPackages = meta.getString("com.mimax.lu.requiredPackages").orEmpty()
+                .split(",").map { it.trim() }.filter { it.isNotBlank() }
+            val missingDependencies = requiredPackages.filter { required ->
+                runCatching { packageManager.getPackageInfo(required, 0) }.isFailure
+            }
             val label = resolve.loadLabel(packageManager).toString()
             val previous = registry.all().firstOrNull { it.id == activityInfo.packageName }
             val entry = ExtensionRegistry.Extension(
@@ -67,10 +73,11 @@ class ExtensionPackageManager(private val context: Context) {
                 versionCode = versionCode,
                 minLauncherVersion = minVersion,
                 activity = ComponentName(activityInfo.packageName, activityInfo.name),
-                enabled = entry.enabled && minVersion <= 1,
+                enabled = entry.enabled && minVersion <= 1 && missingDependencies.isEmpty(),
                 lastError = entry.lastError,
                 requestedPermissions = requested,
-                deniedPermissions = denied
+                deniedPermissions = denied,
+                missingDependencies = missingDependencies
             )
         }.distinctBy { it.packageName }
     }
