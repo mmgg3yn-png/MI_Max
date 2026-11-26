@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
@@ -39,14 +41,24 @@ private val glass = Color.White.copy(alpha = .13f)
 private data class AppEntry(val name:String,val pkg:String,val icon:android.graphics.drawable.Drawable)
 
 class MainActivity : ComponentActivity() {
+    private lateinit var widgetController: LauncherWidgetController
+    override fun onStart() {
+        super.onStart()
+        if (::widgetController.isInitialized) widgetController.startListening()
+    }
+    override fun onStop() {
+        if (::widgetController.isInitialized) widgetController.stopListening()
+        super.onStop()
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MiMaxLauncher() }
+        widgetController = LauncherWidgetController(this)
+        setContent { MiMaxLauncher(widgetController) }
     }
 }
 
 @Composable
-private fun MiMaxLauncher() {
+private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     val ctx= LocalContext.current
     val prefs= remember { ctx.getSharedPreferences("mimax_launcher",0) }
     var tab by remember { mutableStateOf("home") }
@@ -93,7 +105,7 @@ private fun MiMaxLauncher() {
                 AnimatedContent(targetState=tab,transitionSpec={ androidx.compose.animation.fadeIn(tween(180)) togetherWith androidx.compose.animation.fadeOut(tween(120)) },label="pages") { page ->
                     when(page) {
                         "apps" -> AppsPage(filtered,query,{query=it})
-                        "widgets" -> WidgetsPage()
+                        "widgets" -> WidgetsPage(widgetController)
                         "themes" -> ThemesPage(theme,{theme=it;save("theme",it)})
                         "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},{showAccount=true})
                         "account" -> AccountPage { showAccount=false;tab="settings" }
@@ -175,22 +187,77 @@ private fun MiMaxLauncher() {
         Text(sub,color=Color.White.copy(.65f),fontSize=11.sp)
     }
 }
-@Composable private fun WidgetsPage() {
-    var selected by remember{mutableIntStateOf(0)}
-    Column {
-        Text("Widget Stack Studio",color=Color.White,fontSize=24.sp,fontWeight=FontWeight.Bold)
-        Text("Stacked widget layout concept and configuration",color=Color.White.copy(.65f),fontSize=12.sp)
-        Spacer(Modifier.height(14.dp))
-        listOf("Weather","Calendar","Clock","Battery").forEachIndexed{i,name->
-            Row(Modifier.fillMaxWidth().padding(vertical=5.dp).clip(RoundedCornerShape(18.dp)).background(glass).clickable{selected=i}.padding(15.dp),verticalAlignment=Alignment.CenterVertically) {
-                Text(name,color=Color.White,modifier=Modifier.weight(1f))
-                if(selected==i) Icon(Icons.Default.Check,color=Color(0xFFB9D9FF),contentDescription="Selected")
-                else Icon(Icons.Default.Add,color=Color.White,contentDescription="Add to stack")
+@Composable private fun WidgetsPage(controller: LauncherWidgetController) {
+    val ctx = LocalContext.current
+    val prefs = remember { ctx.getSharedPreferences("widget_host_v1", 0) }
+    var providers by remember { mutableStateOf(controller.installedProviders()) }
+    var activeId by remember { mutableIntStateOf(prefs.getInt("active_widget_id", -1)) }
+    var pendingId by remember { mutableIntStateOf(-1) }
+    val bindLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK && pendingId >= 0) {
+            activeId = pendingId
+            prefs.edit().putInt("active_widget_id", pendingId).apply()
+        } else if (pendingId >= 0) {
+            controller.deleteWidget(pendingId)
+        }
+        pendingId = -1
+    }
+    Column(Modifier.fillMaxSize()) {
+        Text("Android Widgets", color=Color.White, fontSize=24.sp, fontWeight=FontWeight.Bold)
+        Text("Choose an installed widget provider and add it to the widget area.", color=Color.White.copy(.65f), fontSize=12.sp)
+        Spacer(Modifier.height(12.dp))
+        if (activeId >= 0) {
+            val hostView = remember(activeId) { controller.createView(activeId) }
+            if (hostView != null) {
+                AndroidView(factory={ hostView }, modifier=Modifier.fillMaxWidth().heightIn(min=110.dp, max=300.dp))
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick={
+                    controller.deleteWidget(activeId)
+                    prefs.edit().remove("active_widget_id").apply()
+                    activeId = -1
+                }) { Text("Remove widget") }
+            } else {
+                Text("Saved widget is unavailable. Select another provider.", color=Color.White.copy(.7f))
+                activeId = -1
             }
+        } else {
+            Text("No widget added yet", color=Color.White.copy(.7f))
         }
         Spacer(Modifier.height(12.dp))
-        Text("Selected stack card: ${listOf("Weather","Calendar","Clock","Battery")[selected]}",color=Color.White)
-        Text("Full Android AppWidgetHost stacking and resize integration is a separate native implementation step.",color=Color.White.copy(.6f),fontSize=11.sp)
+        Text("Available providers", color=Color.White, fontWeight=FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        androidx.compose.foundation.lazy.LazyColumn(
+            modifier=Modifier.weight(1f),
+            verticalArrangement=Arrangement.spacedBy(7.dp)
+        ) {
+            items(providers, key={ it.provider.flattenToString() }) { info ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(glass).padding(12.dp),
+                    verticalAlignment=Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(info.loadLabel(ctx.packageManager), color=Color.White)
+                        Text(info.provider.packageName, color=Color.White.copy(.55f), fontSize=10.sp)
+                    }
+                    Button(onClick={
+                        val id = controller.allocateId()
+                        pendingId = id
+                        val intent = controller.bindIntent(id, info.provider)
+                        if (intent == null) {
+                            activeId = id
+                            prefs.edit().putInt("active_widget_id", id).apply()
+                            pendingId = -1
+                        } else bindLauncher.launch(intent)
+                    }) { Text("Add") }
+                }
+            }
+        }
+        if (providers.isEmpty()) {
+            Text("No widget providers were found on this device.", color=Color.White.copy(.65f))
+        }
+        OutlinedButton(onClick={ providers = controller.installedProviders() }, modifier=Modifier.fillMaxWidth()) {
+            Text("Refresh providers")
+        }
     }
 }
 @Composable private fun ThemesPage(current:String,onChoose:(String)->Unit) {
