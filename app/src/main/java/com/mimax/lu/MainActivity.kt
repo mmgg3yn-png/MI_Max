@@ -643,6 +643,9 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                         }) { Text("Manage this extension's permissions") }
                     }
                     extension.lastError?.let { Text("Last error: $it",color=Color(0xFFFFB4AB),fontSize=10.sp) }
+                    manager.errorLog(extension.packageName).takeLast(5).forEach { logLine ->
+                        Text(logLine,color=Color.White.copy(.48f),fontSize=9.sp)
+                    }
                     Row(horizontalArrangement=Arrangement.End,modifier=Modifier.fillMaxWidth()) {
                         TextButton(onClick={
                             manager.launch(extension).fold(
