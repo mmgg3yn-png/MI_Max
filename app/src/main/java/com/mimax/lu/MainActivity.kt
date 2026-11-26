@@ -165,7 +165,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                         "themes" -> ThemesPage(theme,{theme=it;save("theme",it)})
                         "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},iconPack,{iconPack=it;save("icon_pack",it)},wallpaperUri,{wallpaperPicker.launch(arrayOf("image/*"))},{wallpaperUri="";prefs.edit().remove("wallpaper_uri").apply()},fontPath,{fontPicker.launch(arrayOf("font/ttf","font/otf","application/octet-stream"))},{fontPath="";prefs.edit().remove("font_path").apply()},{tab="account"})
                         "account" -> AccountPage { showAccount=false;tab="settings" }
-                        else -> HomePage(apps,columns,opacity,{tab="apps"},{tab="settings"})
+                        else -> HomePage(apps,columns,opacity,widgetController,{tab="apps"},{tab="settings"})
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -232,7 +232,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
     }
 }
-@Composable private fun HomePage(apps:List<AppEntry>,cols:Int,alpha:Float,onAll:()->Unit,onSettings:()->Unit) {
+@Composable private fun HomePage(apps:List<AppEntry>,cols:Int,alpha:Float,widgetController:LauncherWidgetController,onAll:()->Unit,onSettings:()->Unit) {
     val ctx=LocalContext.current
     val store = remember { LauncherLayoutStore(ctx) }
     val gestures = remember { GestureSettings(ctx) }
@@ -289,6 +289,22 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
             GlassTile("Weather","Add a real Android widget in Widgets","☀",Modifier.weight(1f))
             GlassTile("Calendar",SimpleDateFormat("EEE, d MMM",Locale.getDefault()).format(Date()),"▦",Modifier.weight(1f))
+        }
+        val widgetPrefs = remember { ctx.getSharedPreferences("widget_host_v1",0) }
+        val homeWidgetIds = remember { widgetPrefs.getStringSet("active_widget_ids", emptySet()).orEmpty().mapNotNull { it.toIntOrNull() } }
+        if (homeWidgetIds.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text("Widget stack",color=Color.White.copy(.8f),fontSize=12.sp)
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                homeWidgetIds.take(2).forEach { id ->
+                    androidx.compose.runtime.key(id) {
+                        val hostView = remember(id) { widgetController.createView(id) }
+                        if (hostView != null) {
+                            AndroidView(factory={ hostView },modifier=Modifier.weight(1f).heightIn(min=100.dp,max=155.dp))
+                        }
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(15.dp))
         Text("Pinned apps",color=Color.White.copy(.8f),fontSize=13.sp)
