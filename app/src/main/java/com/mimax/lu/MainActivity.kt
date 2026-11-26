@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import android.os.Bundle
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -13,6 +15,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -36,6 +39,8 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
@@ -80,6 +85,20 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     var model by remember { mutableStateOf(prefs.getString("ai_model","") ?: "") }
     var apiKey by remember { mutableStateOf(prefs.getString("ai_key","") ?: "") }
     var iconPack by remember { mutableStateOf(prefs.getString("icon_pack","") ?: "") }
+    var wallpaperUri by remember { mutableStateOf(prefs.getString("wallpaper_uri","") ?: "") }
+    val wallpaperPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            wallpaperUri = uri.toString()
+            prefs.edit().putString("wallpaper_uri", wallpaperUri).apply()
+        }
+    }
+    val wallpaperBitmap = remember(wallpaperUri) {
+        if (wallpaperUri.isBlank()) null else runCatching {
+            val options = BitmapFactory.Options().apply { inSampleSize = 3 }
+            ctx.contentResolver.openInputStream(Uri.parse(wallpaperUri))?.use { BitmapFactory.decodeStream(it, null, options)?.asImageBitmap() }
+        }.getOrNull()
+    }
     var showAccount by remember { mutableStateOf(false) }
     val customTheme = remember(theme) { ThemePackManager(ctx).installed().firstOrNull { it.id == theme } }
     val colors = customTheme?.let { listOf(Color(it.backgroundStart), Color(it.backgroundEnd), Color(it.backgroundEnd)) } ?: when(theme) {
@@ -103,7 +122,11 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         when(v){ is Float->putFloat(k,v); is Int->putInt(k,v); is String->putString(k,v) }
     }.apply() }
     MaterialTheme(colorScheme=darkColorScheme(primary=customTheme?.let { Color(it.accent) } ?: Color(0xFFB9D9FF),surface=Color(0xFF202B3A),background=Color(0xFF0B111B))) {
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(colors))) {
+        Box(Modifier.fillMaxSize()) {
+            if (wallpaperBitmap != null) {
+                Image(bitmap=wallpaperBitmap,contentDescription=null,modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
+            }
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(colors.map { it.copy(alpha=if(wallpaperBitmap==null) 1f else .72f) }))) {
             Column(Modifier.fillMaxSize().padding(horizontal=18.dp)) {
                 Spacer(Modifier.height(38.dp))
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
@@ -121,7 +144,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                         "widgets" -> WidgetsPage(widgetController)
                         "extensions" -> ExtensionsPage()
                         "themes" -> ThemesPage(theme,{theme=it;save("theme",it)})
-                        "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},iconPack,{iconPack=it;save("icon_pack",it)},{tab="account"})
+                        "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},iconPack,{iconPack=it;save("icon_pack",it)},wallpaperUri,{wallpaperPicker.launch(arrayOf("image/*"))},{wallpaperUri="";prefs.edit().remove("wallpaper_uri").apply()},{tab="account"})
                         "account" -> AccountPage { showAccount=false;tab="settings" }
                         else -> HomePage(apps,columns,opacity,{tab="apps"},{tab="settings"})
                     }
@@ -133,6 +156,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                     }
                 }
                 Spacer(Modifier.height(9.dp))
+            }
             }
         }
         if(showAccount) AccountDialog(onDismiss={showAccount=false})
@@ -548,7 +572,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
     }
 }
-@Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,iconPack:String,onIconPack:(String)->Unit,onAccount:()->Unit) {
+@Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,iconPack:String,onIconPack:(String)->Unit,wallpaperUri:String,onChooseWallpaper:()->Unit,onClearWallpaper:()->Unit,onAccount:()->Unit) {
     val context = LocalContext.current
     var backupMessage by remember { mutableStateOf("") }
     val backupManager = remember { LauncherBackupManager(context) }
@@ -570,6 +594,12 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         Text("Glass opacity: ${(alpha*100).toInt()}%",color=Color.White.copy(.7f));Slider(value=alpha,onValueChange=onAlpha,valueRange=.05f..0.75f)
         Text("Home grid columns: $cols",color=Color.White.copy(.7f));Slider(value=cols.toFloat(),onValueChange={onCols(it.toInt().coerceIn(3,6))},valueRange=3f..6f,steps=2)
         IconPackSettingRow(iconPack,onIconPack,context)
+        Text("Wallpaper",color=Color.White,fontSize=13.sp)
+        Text(if(wallpaperUri.isBlank()) "Using gradient background" else "Custom image selected",color=Color.White.copy(.55f),fontSize=10.sp)
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick=onChooseWallpaper,modifier=Modifier.weight(1f)) { Text("Choose wallpaper") }
+            OutlinedButton(onClick=onClearWallpaper,modifier=Modifier.weight(1f),enabled=wallpaperUri.isNotBlank()) { Text("Reset") }
+        }
         HorizontalDivider(color=Color.White.copy(.18f),modifier=Modifier.padding(vertical=9.dp))
         Text("Home gestures",color=Color.White,fontWeight=FontWeight.SemiBold)
         GestureSettingRow("Double tap",GestureSettings.Gesture.DOUBLE_TAP_HOME,context)
