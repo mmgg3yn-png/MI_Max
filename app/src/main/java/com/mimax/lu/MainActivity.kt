@@ -90,6 +90,8 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
     var model by remember { mutableStateOf(prefs.getString("ai_model","") ?: "") }
     var apiKey by remember { mutableStateOf(prefs.getString("ai_key","") ?: "") }
     var iconPack by remember { mutableStateOf(prefs.getString("icon_pack","") ?: "") }
+    var iconShape by remember { mutableStateOf(prefs.getString("icon_shape","squircle") ?: "squircle") }
+    var animationDuration by remember { mutableIntStateOf(prefs.getInt("animation_duration",180)) }
     var wallpaperUri by remember { mutableStateOf(prefs.getString("wallpaper_uri","") ?: "") }
     var fontPath by remember { mutableStateOf(prefs.getString("font_path","") ?: "") }
     val fontPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -152,16 +154,16 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                     Surface(color=Color.White.copy(opacity),shape=CircleShape) { Text("Mi_Max",Modifier.padding(horizontal=15.dp,vertical=11.dp),color=Color.White,fontWeight=FontWeight.Bold) }
                 }
                 Spacer(Modifier.height(15.dp))
-                AnimatedContent(targetState=tab,transitionSpec={ androidx.compose.animation.fadeIn(tween(180)) togetherWith androidx.compose.animation.fadeOut(tween(120)) },label="pages") { page ->
+                AnimatedContent(targetState=tab,transitionSpec={ androidx.compose.animation.fadeIn(tween(animationDuration)) togetherWith androidx.compose.animation.fadeOut(tween((animationDuration/2).coerceAtLeast(60))) },label="pages") { page ->
                     when(page) {
-                        "apps" -> AppsPage(filtered,query,{query=it})
+                        "apps" -> AppsPage(filtered,query,iconShape,{query=it})
                         "ai" -> AiChatPage(endpoint,model,apiKey)
                         "widgets" -> WidgetsPage(widgetController)
                         "extensions" -> ExtensionsPage()
                         "themes" -> ThemesPage(theme,{theme=it;save("theme",it)})
-                        "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},iconPack,{iconPack=it;save("icon_pack",it)},wallpaperUri,{wallpaperPicker.launch(arrayOf("image/*"))},{wallpaperUri="";prefs.edit().remove("wallpaper_uri").apply()},fontPath,{fontPicker.launch(arrayOf("font/ttf","font/otf","application/octet-stream"))},{fontPath="";prefs.edit().remove("font_path").apply()},{tab="account"})
+                        "settings" -> SettingsPage(blur,{blur=it;save("blur",it)},opacity,{opacity=it;save("opacity",it)},columns,{columns=it;save("columns",it)},endpoint,{endpoint=it;save("ai_endpoint",it)},model,{model=it;save("ai_model",it)},apiKey,{apiKey=it;save("ai_key",it)},iconPack,{iconPack=it;save("icon_pack",it)},iconShape,{iconShape=it;save("icon_shape",it)},animationDuration,{animationDuration=it;save("animation_duration",it)},wallpaperUri,{wallpaperPicker.launch(arrayOf("image/*"))},{wallpaperUri="";prefs.edit().remove("wallpaper_uri").apply()},fontPath,{fontPicker.launch(arrayOf("font/ttf","font/otf","application/octet-stream"))},{fontPath="";prefs.edit().remove("font_path").apply()},{tab="account"})
                         "account" -> AccountPage { showAccount=false;tab="settings" }
-                        else -> HomePage(apps,columns,opacity,widgetController,{tab="apps"},{tab="settings"})
+                        else -> HomePage(apps,columns,opacity,widgetController,iconShape,{tab="apps"},{tab="settings"})
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -232,7 +234,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
     }
 }
-@Composable private fun HomePage(apps:List<AppEntry>,cols:Int,alpha:Float,widgetController:LauncherWidgetController,onAll:()->Unit,onSettings:()->Unit) {
+@Composable private fun HomePage(apps:List<AppEntry>,cols:Int,alpha:Float,widgetController:LauncherWidgetController,iconShape:String,onAll:()->Unit,onSettings:()->Unit) {
     val ctx=LocalContext.current
     val store = remember { LauncherLayoutStore(ctx) }
     val gestures = remember { GestureSettings(ctx) }
@@ -331,7 +333,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
             Spacer(Modifier.height(10.dp))
         }
         LazyVerticalGrid(columns=GridCells.Fixed(cols),modifier=Modifier.heightIn(max=330.dp),contentPadding=PaddingValues(bottom=8.dp),horizontalArrangement=Arrangement.spacedBy(9.dp),verticalArrangement=Arrangement.spacedBy(13.dp)) {
-            items(visibleApps.take(24),key={it.pkg}) { AppIcon(it, onLongClick={ longPressApp(it) }) }
+            items(visibleApps.take(24),key={it.pkg}) { AppIcon(it, iconShape=iconShape, onLongClick={ longPressApp(it) }) }
         }
     }
     if (showFolderName && openedFolder != null) {
@@ -374,23 +376,24 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         )
     }
 }
-@Composable private fun AppsPage(apps:List<AppEntry>,query:String,onQuery:(String)->Unit) {
+@Composable private fun AppsPage(apps:List<AppEntry>,query:String,iconShape:String,onQuery:(String)->Unit) {
     Column {
         Text("App Library",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
         GlassInput(query,onQuery,"Search installed apps")
         Spacer(Modifier.height(10.dp))
-        LazyVerticalGrid(columns=GridCells.Fixed(4),modifier=Modifier.weight(1f),contentPadding=PaddingValues(bottom=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) { items(apps,key={it.pkg}){AppIcon(it)} }
+        LazyVerticalGrid(columns=GridCells.Fixed(4),modifier=Modifier.weight(1f),contentPadding=PaddingValues(bottom=12.dp),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) { items(apps,key={it.pkg}){AppIcon(it,iconShape=iconShape)} }
     }
 }
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable private fun AppIcon(app:AppEntry,onLongClick:()->Unit = {}) {
+@Composable private fun AppIcon(app:AppEntry,iconShape:String="squircle",onLongClick:()->Unit = {}) {
     val ctx=LocalContext.current
+    val iconClip = when(iconShape) { "circle" -> CircleShape; "square" -> RoundedCornerShape(4.dp); "rounded" -> RoundedCornerShape(12.dp); else -> RoundedCornerShape(19.dp) }
     Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.combinedClickable(
         onClick={ ctx.packageManager.getLaunchIntentForPackage(app.pkg)?.let{ctx.startActivity(it)} },
         onLongClick=onLongClick
     )) {
-        Surface(shape=RoundedCornerShape(19.dp),color=glass,modifier=Modifier.size(57.dp)) {
+        Surface(shape=iconClip,color=glass,modifier=Modifier.size(57.dp)) {
             ImageIcon(app.icon,app.name)
         }
         Spacer(Modifier.height(4.dp))
@@ -634,7 +637,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         }
     }
 }
-@Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,iconPack:String,onIconPack:(String)->Unit,wallpaperUri:String,onChooseWallpaper:()->Unit,onClearWallpaper:()->Unit,fontPath:String,onChooseFont:()->Unit,onClearFont:()->Unit,onAccount:()->Unit) {
+@Composable private fun SettingsPage(blur:Float,onBlur:(Float)->Unit,alpha:Float,onAlpha:(Float)->Unit,cols:Int,onCols:(Int)->Unit,endpoint:String,onEndpoint:(String)->Unit,model:String,onModel:(String)->Unit,key:String,onKey:(String)->Unit,iconPack:String,onIconPack:(String)->Unit,wallpaperUri:String,onChooseWallpaper:()->Unit,onClearWallpaper:()->Unit,fontPath:String,onChooseFont:()->Unit,onClearFont:()->Unit,iconShape:String,onIconShape:(String)->Unit,animationDuration:Int,onAnimationDuration:(Int)->Unit,onAccount:()->Unit) {
     val context = LocalContext.current
     var backupMessage by remember { mutableStateOf("") }
     val backupManager = remember { LauncherBackupManager(context) }
@@ -656,6 +659,9 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         Text("Glass opacity: ${(alpha*100).toInt()}%",color=Color.White.copy(.7f));Slider(value=alpha,onValueChange=onAlpha,valueRange=.05f..0.75f)
         Text("Home grid columns: $cols",color=Color.White.copy(.7f));Slider(value=cols.toFloat(),onValueChange={onCols(it.toInt().coerceIn(3,6))},valueRange=3f..6f,steps=2)
         IconPackSettingRow(iconPack,onIconPack,context)
+        IconShapeSettingRow(iconShape,onIconShape)
+        Text("Page animation duration: ${animationDuration} ms",color=Color.White.copy(.7f),fontSize=12.sp)
+        Slider(value=animationDuration.toFloat(),onValueChange={onAnimationDuration(it.toInt().coerceIn(100,600))},valueRange=100f..600f)
         Text("Wallpaper",color=Color.White,fontSize=13.sp)
         Text(if(wallpaperUri.isBlank()) "Using gradient background" else "Custom image selected",color=Color.White.copy(.55f),fontSize=10.sp)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -691,6 +697,20 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
         OutlinedButton(onClick={ importTheme.launch(arrayOf("application/json")) },modifier=Modifier.fillMaxWidth()) { Text("Import theme pack") }
         if (backupMessage.isNotBlank()) Text(backupMessage,color=Color.White.copy(.75f),fontSize=11.sp)
         Button(onClick=onAccount,modifier=Modifier.fillMaxWidth()) { Icon(Icons.Default.Person,null);Spacer(Modifier.width(7.dp));Text("Developer • Account • About") }
+    }
+}
+@Composable private fun IconShapeSettingRow(selected:String,onSelected:(String)->Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().padding(vertical=3.dp),verticalAlignment=Alignment.CenterVertically) {
+        Text("App icon shape",color=Color.White,modifier=Modifier.weight(1f),fontSize=13.sp)
+        Box {
+            TextButton(onClick={expanded=true}) { Text(selected.replaceFirstChar{it.uppercase()}) }
+            DropdownMenu(expanded=expanded,onDismissRequest={expanded=false}) {
+                listOf("squircle","rounded","circle","square").forEach { shape ->
+                    DropdownMenuItem(text={Text(shape.replaceFirstChar{it.uppercase()})},onClick={onSelected(shape);expanded=false})
+                }
+            }
+        }
     }
 }
 @Composable private fun IconPackSettingRow(selected:String,onSelected:(String)->Unit,context:android.content.Context) {
