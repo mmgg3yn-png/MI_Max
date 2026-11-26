@@ -1,10 +1,6 @@
 name: Build Mi_Max Launcher from OpenLauncher (ARM32 + ARM64)
 
 on:
-  push:
-    branches: [openlauncher-foundation, main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
