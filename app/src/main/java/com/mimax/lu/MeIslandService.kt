@@ -18,6 +18,9 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.TextView
 import java.util.Locale
 
@@ -187,14 +190,14 @@ class MeIslandService : Service() {
         view.scaleX = .72f
         view.scaleY = .72f
         view.alpha = 0f
-        view.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(theme.animationMs.toLong()).start()
+        view.animate().alpha(1f).scaleX(1f).scaleY(1f).setInterpolator(animationInterpolator(theme.animation)).setDuration(theme.animationMs.toLong()).start()
     }
 
     private fun makeBackground(theme: MeIslandThemeManager.Theme): GradientDrawable {
         val fill = if (theme.style == "ltin") Color.BLACK else theme.background.toInt()
         return GradientDrawable().apply {
             setColor(fill)
-            cornerRadius = dp(if (theme.style == "ltin") 40 else theme.cornerDp).toFloat()
+            cornerRadius = dp(if (theme.layout == "pill") 40 else theme.cornerDp).toFloat()
             setStroke(dp(1), if (theme.style == "his") Color.argb(65, 210, 232, 255) else Color.argb(35, 255, 255, 255))
         }
     }
@@ -217,10 +220,10 @@ class MeIslandService : Service() {
             params.height = dp(if (expanded) theme.expandedHeightDp else theme.compactHeightDp)
             runCatching { windowManager?.updateViewLayout(view, params) }
         }
-        view.animate().setDuration(theme.animationMs.toLong()).start()
+        view.animate().setInterpolator(animationInterpolator(theme.animation)).setDuration(theme.animationMs.toLong()).start()
     }
 
-    private fun removeIsland() {
+    private fun animationInterpolator(name: String) = when (name) {\n        "spring" -> OvershootInterpolator(0.65f)\n        "fade_slide" -> DecelerateInterpolator()\n        else -> AccelerateDecelerateInterpolator()\n    }\n\n    private fun removeIsland() {
         island?.let { view ->
             val duration = MeIslandThemeManager(this).current().animationMs.coerceAtMost(350).toLong()
             view.animate().alpha(0f).scaleX(.78f).scaleY(.78f).setDuration(duration).withEndAction {
