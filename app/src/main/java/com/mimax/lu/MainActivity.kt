@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 private val glass = Color.White.copy(alpha = .13f)
 private data class AppEntry(val name:String,val pkg:String,val icon:android.graphics.drawable.Drawable)
@@ -320,9 +321,10 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
 }
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)\n@Composable private fun AppIcon(app:AppEntry,onLongClick:()->Unit = {}) {
     val ctx=LocalContext.current
-    Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.clickable {
-        ctx.packageManager.getLaunchIntentForPackage(app.pkg)?.let{ctx.startActivity(it)}
-    }) {
+    Column(horizontalAlignment=Alignment.CenterHorizontally,modifier=Modifier.combinedClickable(
+        onClick={ ctx.packageManager.getLaunchIntentForPackage(app.pkg)?.let{ctx.startActivity(it)} },
+        onLongClick=onLongClick
+    )) {
         Surface(shape=RoundedCornerShape(19.dp),color=glass,modifier=Modifier.size(57.dp)) {
             ImageIcon(app.icon,app.name)
         }
@@ -514,7 +516,7 @@ private fun MiMaxLauncher(widgetController: LauncherWidgetController) {
                 Box(Modifier.size(38.dp).clip(CircleShape).background(Brush.linearGradient(listOf(Color(0xFF7CB5D9),Color(0xFF302D58)))))
                 Spacer(Modifier.width(12.dp))
                 Text(name,color=Color.White,modifier=Modifier.weight(1f))
-                if(current==name) Icon(Icons.Default.Check,color=Color(0xFFB9D9FF),contentDescription="Applied")
+                if(current==name) Icon(Icons.Default.Check,contentDescription="Applied",tint=Color(0xFFB9D9FF))
             }
         }
         if (installed.isNotEmpty()) {
