@@ -142,7 +142,7 @@ public final class MeIslandService extends Service {
     }
 
     private void showCapsule() {
-        if (!Settings.canDrawOverlays(this)) return;
+        if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) return;
         if (capsule == null) {
             capsule = new FrameLayout(this);
             GradientDrawable bg = new GradientDrawable();
@@ -267,7 +267,7 @@ public final class MeIslandSettingsActivity extends Activity {
         Button timer = new Button(this);
         timer.setText("Start 1-minute timer in Me Island");
         timer.setOnClickListener(v -> {
-            if (!Settings.canDrawOverlays(this)) { requestOverlay(); return; }
+            if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) { requestOverlay(); return; }
             Intent service = new Intent(this, MeIslandService.class);
             service.setAction(MeIslandService.ACTION_START_TIMER);
             service.putExtra(MeIslandService.EXTRA_DURATION, 60000L);
